@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prompt Template Creator</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .navbar-brand img {
+            height: 40px;
+        }
+        .variable-config-item {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #fff;
+        }
+        .variable-config-item:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+    </style>
+    <link rel="icon" type="image/png" href="/assets/favicon/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/assets/favicon/favicon.svg" />
+<link rel="shortcut icon" href="/assets/favicon/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/favicon/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-title" content="PromptDB" />
+<link rel="manifest" href="/assets/favicon/site.webmanifest" />
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="index.html">
+                <i class="bi bi-lightbulb-fill text-warning"></i> Prompt Manager
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="index.html">
+                            <i class="bi bi-house-fill"></i> Home
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="template-creator.html">
+                            <i class="bi bi-plus-circle-fill"></i> Create Template
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="history.html">
+                            <i class="bi bi-clock-history"></i> History
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container my-5">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h3 class="mb-0"><i class="bi bi-file-earmark-plus"></i> Create New Prompt Template</h3>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Create a new prompt template with variables. Variables should be wrapped in square brackets like [variable-name].</p>
+                
+                <!-- Step 1: Template Name and Prompt -->
+                <form id="templateForm">
+                    <div class="mb-3">
+                        <label for="templateName" class="form-label fw-bold">Template Name</label>
+                        <input type="text" class="form-control" id="templateName" required 
+                               placeholder="e.g., Email Writer, Story Generator">
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="promptText" class="form-label fw-bold">Insert Prompt Here</label>
+                        <textarea class="form-control" id="promptText" rows="8" required
+                                  placeholder="Write your prompt with variables in square brackets. Example:&#10;&#10;Write a [tone] email to [recipient] about [subject]. The email should be [length] words long."></textarea>
+                        <div class="form-text">
+                            <i class="bi bi-info-circle text-white"></i> Use [variable-name] format for variables in your prompt
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn btn-info" id="parseVariablesBtn">
+                        <i class="bi bi-search text-white"></i> Parse Variables
+                    </button>
+                </form>
+
+                <!-- Step 2: Variable Configuration (Hidden initially) -->
+                <div id="variableConfigSection" style="display: none;" class="mt-5">
+                    <hr>
+                    <h4 class="mb-3">Configure Variables</h4>
+                    <p class="text-muted">Define labels and input types for each detected variable.</p>
+                    
+                    <div id="variableConfigContainer">
+                        <!-- Variable configuration items will be dynamically inserted here -->
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                        <button type="button" class="btn btn-secondary" id="cancelBtn">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </button>
+                        <button type="button" class="btn btn-success" id="saveTemplateBtn">
+                            <i class="bi bi-save"></i> Save Template
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert Container -->
+        <div id="alertContainer" class="mt-3"></div>
+
+        <!-- Existing Templates List -->
+        <div class="card shadow mt-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-list-ul"></i> Existing Templates</h5>
+            </div>
+            <div class="card-body">
+                <div id="templatesList" class="list-group text-white" style="max-height: 400px; overflow-y: auto;">
+                    <!-- Templates will be loaded here -->
+                </div>
+                <style>
+                    #templatesList .list-group-item {
+                        color: white !important;
+                        background-color: rgba(255, 255, 255, 0.1) !important;
+                        border-color: rgba(255, 255, 255, 0.2) !important;
+                    }
+                    #templatesList .list-group-item:hover {
+                        background-color: rgba(255, 255, 255, 0.2) !important;
+                    }
+                </style>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Custom JS -->
+    <script src="js/template-creator.js"></script>
+</body>
+</html>

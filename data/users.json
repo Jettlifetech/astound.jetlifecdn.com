@@ -1,0 +1,25 @@
+{
+    "next_id": 4,
+    "users": [
+        {
+            "id": 1,
+            "username": "admin",
+            "first_name": "",
+            "last_name": "",
+            "email": "admin@prompt-db.local",
+            "password_hash": "$2y$12$MBnghYSvGHrd36KtgCYGs.ki2XQRy6At.S9NlU2zbGRBjai9IzGhS",
+            "role": "admin",
+            "created_at": "2026-02-18T16:05:18Z"
+        },
+        {
+            "id": 3,
+            "username": "JETTLIFE",
+            "first_name": "Daine",
+            "last_name": "Dvorak",
+            "email": "daine@jettlifetech.com",
+            "password_hash": "$2y$12$l8avF8BBvJFcPqgEZRTDrur7LaKmIBq1oRVgIks3lqR7GXr.H9jA2",
+            "role": "admin",
+            "created_at": "2026-02-18T16:33:11+00:00"
+        }
+    ]
+}
