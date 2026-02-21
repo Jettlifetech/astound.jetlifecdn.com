@@ -52,7 +52,14 @@ function toast(message, type = 'info') {
 function confirmDialog({ title = 'Confirm', body = 'Are you sure?', okText = 'OK', okClass = 'btn-danger' }) {
   return new Promise(resolve => {
     $('#confirmTitle').textContent = title;
-    $('#confirmBody').textContent = body;
+    const bodyEl = $('#confirmBody');
+    // Accept a DOM node, an HTML string, or plain text
+    if (body instanceof Node) {
+      bodyEl.innerHTML = '';
+      bodyEl.appendChild(body);
+    } else {
+      bodyEl.innerHTML = body; // render HTML strings properly
+    }
     const okBtn = $('#confirmOkBtn');
     okBtn.textContent = okText;
     okBtn.className = 'btn ' + okClass;
@@ -88,6 +95,15 @@ const api = {
     });
     if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`);
     try { return await res.json(); } catch { return { success: true }; }
+  },
+  async put(path, data) {
+    const res = await fetch(API_BASE + path, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status}`);
+    return res.json();
   },
   async del(path, formEncodedBody) {
     const res = await fetch(API_BASE + path, {
@@ -128,6 +144,16 @@ const api = {
     });
     if (!res.ok) throw new Error(`Update failed: ${res.status}`);
     return res.json();
+  },
+  // Generic template action (increment_use, bulk_category, export, import, etc.)
+  async templateAction(actionData) {
+    const res = await fetch(API_BASE + 'templates.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(actionData)
+    });
+    if (!res.ok) throw new Error(`Action failed: ${res.status}`);
+    return res.json();
   }
 };
 
@@ -136,6 +162,8 @@ const Routes = {
   '/generate': renderGenerate,
   '/templates': renderTemplates,
   '/history': renderHistory,
+  '/profiles': renderProfiles,
+  '/schema': renderSchemaGen,
   '/settings': renderSettings,
   '/users': renderUsers
 };
@@ -191,6 +219,10 @@ async function loadHistory(force = false) {
 // Generate view
 async function renderGenerate() {
   await loadTemplates();
+  let profiles = [];
+  try { profiles = await api.get('profiles.php'); } catch { }
+  let activeProfileData = {};
+
   const root = $('#view-root');
   root.innerHTML = '';
 
@@ -208,8 +240,31 @@ async function renderGenerate() {
   const card = h('div', { class: 'card card-surface' });
   const body = h('div', { class: 'card-body' });
 
+  // 1. Profile Selector
+  if (profiles && profiles.length > 0) {
+    const pGroup = h('div', { class: 'mb-4 p-3 rounded glass-brd bg-white bg-opacity-10' });
+    const pLabel = h('label', { class: 'form-label fw-bold small text-muted text-uppercase mb-2' },
+      h('i', { class: 'bi bi-person-lines-fill me-1' }), '1. Autofill from Profile (Optional)');
+    const pSelect = h('select', { class: 'form-select cosmic-input form-select-sm' });
+    pSelect.innerHTML = '<option value="">-- No Profile Selected --</option>';
+    profiles.forEach(p => pSelect.innerHTML += `<option value="${p.id}">${p.profile_name}</option>`);
+
+    pSelect.onchange = () => {
+      const pid = pSelect.value;
+      activeProfileData = pid ? (profiles.find(x => x.id == pid)?.profile_data || {}) : {};
+      if (Store.state.selectedTemplate) {
+        renderVars(Store.state.selectedTemplate);
+        if (pid) toast('Profile data applied', 'success');
+      }
+    };
+
+    pGroup.append(pLabel, pSelect);
+    body.append(pGroup);
+  }
+
+  // 2. Template Selector
   const selectGroup = h('div', { class: 'mb-3' },
-    h('label', { for: 'genTemplate', class: 'form-label fw-bold' }, 'Prompt Template'),
+    h('label', { for: 'genTemplate', class: 'form-label fw-bold' }, '2. Prompt Template'),
     h('select', { class: 'form-select cosmic-input', id: 'genTemplate' },
       h('option', { value: '' }, 'Select a template…'),
       state.templates
@@ -295,6 +350,10 @@ async function renderGenerate() {
     }
     input.id = `var_${variable.variable_name}`;
     input.placeholder = `Enter ${variable.field_label.toLowerCase()}…`;
+    // Pre-fill from active profile if available
+    if (activeProfileData[variable.variable_name]) {
+      input.value = activeProfileData[variable.variable_name];
+    }
     input.required = true;
     group.append(label, input);
     col.append(group);
@@ -343,6 +402,8 @@ async function renderGenerate() {
       const now = new Date().toISOString();
       const optimistic = { type: 'prompt', template_id: t.id, template_name: t.template_name, generated_prompt: prompt, variable_data: variableData, created_at: now };
       Store.set({ history: [optimistic, ...Store.state.history] });
+      // Silently increment use_count in the background
+      api.templateAction({ action: 'increment_use', id: t.id }).catch(() => { });
     } catch (e) { console.warn('Failed to save to history:', e); }
     toast('Prompt generated!', 'success');
   });
@@ -479,26 +540,76 @@ async function renderTemplates() {
   const root = $('#view-root');
   root.innerHTML = '';
 
-  const header = h('div', { class: 'd-flex align-items-center justify-content-between mb-3' },
-    h('h2', { class: 'mb-0 text-gradient' }, 'Templates'),
-    h('a', { href: '#/generate', class: 'btn btn-outline-light cosmic-btn', 'data-ripple': '' }, h('i', { class: 'bi bi-magic me-1' }), 'Go to Generate')
-  );
+  // ── State ────────────────────────────────────────────────────────────────
+  let sortKey = 'created_at';
+  let sortDir = -1; // -1 = newest first
+  let filterText = '';
+  let filterCategory = 'all';
+  let selectedIds = new Set();
 
-  // Creator card
-  const card = h('div', { class: 'card card-surface' });
+  // ── Category color palette ────────────────────────────────────────────────
+  const CATEGORY_COLORS = {
+    'Content': { bg: '#7c3aed', text: '#fff', emoji: '\uD83D\uDCDD' }, // violet
+    'Schema': { bg: '#0891b2', text: '#fff', emoji: '\uD83D\uDCCA' }, // teal
+    'QA': { bg: '#059669', text: '#fff', emoji: '\u2714' }, // emerald
+    'Coding': { bg: '#ea580c', text: '#fff', emoji: '\uD83D\uDCBB' }, // orange
+    'Rich Media': { bg: '#db2777', text: '#fff', emoji: '\uD83C\uDF9E' }, // pink
+    'Ungrouped': { bg: '#475569', text: '#fff', emoji: '\uD83D\uDCCE' }, // slate
+    'all': { bg: '#2563eb', text: '#fff', emoji: '\uD83D\uDCCB' }, // blue
+  };
+  const getCatStyle = (cat) => CATEGORY_COLORS[cat] || { bg: '#6c757d', text: '#fff', emoji: '' };
+
+  // ── Header ────────────────────────────────────────────────────────────────
+  root.appendChild(h('div', { class: 'd-flex align-items-center justify-content-between mb-3 flex-wrap gap-2' },
+    h('h2', { class: 'mb-0 text-gradient' }, h('i', { class: 'bi bi-file-earmark-text me-2' }), 'Templates'),
+    h('div', { class: 'd-flex gap-2 flex-wrap' },
+      h('button', { class: 'btn btn-outline-info cosmic-btn btn-sm', id: 'importTplBtn' },
+        h('i', { class: 'bi bi-upload me-1' }), 'Import'
+      ),
+      h('button', { class: 'btn btn-outline-info cosmic-btn btn-sm', id: 'exportTplBtn' },
+        h('i', { class: 'bi bi-download me-1' }), 'Export'
+      ),
+      h('a', { href: '#/generate', class: 'btn btn-outline-light cosmic-btn btn-sm' },
+        h('i', { class: 'bi bi-magic me-1' }), 'Go to Generate'
+      )
+    )
+  ));
+
+  // ── Creator Card ────────────────────────────────────────────────────────
+  const card = h('div', { class: 'card card-surface mb-3' });
   const body = h('div', { class: 'card-body' });
+  body.appendChild(h('h5', { class: 'mb-3' }, h('i', { class: 'bi bi-plus-circle me-2' }), 'Create New Template'));
 
   const form = h('form', { id: 'tplForm' });
-  const nameGroup = h('div', { class: 'mb-3' },
-    h('label', { for: 'tplName', class: 'form-label fw-bold' }, 'Template Name'),
-    h('input', { class: 'form-control cosmic-input', id: 'tplName', required: true, placeholder: 'e.g. Email Writer, Story Idea Generator' })
+  const nameRow = h('div', { class: 'row g-3 mb-3' },
+    h('div', { class: 'col-md-8' },
+      h('label', { for: 'tplName', class: 'form-label fw-bold' }, 'Template Name'),
+      h('input', { class: 'form-control cosmic-input', id: 'tplName', required: true, placeholder: 'e.g. Email Writer, Story Idea Generator' })
+    ),
+    h('div', { class: 'col-md-4' },
+      h('label', { class: 'form-label fw-bold' }, 'Category'),
+      (() => {
+        const sel = h('select', { class: 'form-select cosmic-input', id: 'tplCategory' });
+        sel.appendChild(h('option', { value: '' }, '— No category —'));
+        ['Content', 'Schema', 'QA', 'Coding', 'Rich Media'].forEach(c =>
+          sel.appendChild(h('option', { value: c }, c))
+        );
+        return sel;
+      })()
+    )
   );
+
   const textGroup = h('div', { class: 'mb-3' },
     h('label', { for: 'tplText', class: 'form-label fw-bold' }, 'Prompt Text'),
-    h('textarea', { id: 'tplText', class: 'form-control cosmic-input', rows: '8', required: true, placeholder: 'Write your prompt using [variable-names]…' }),
+    h('textarea', {
+      id: 'tplText', class: 'form-control cosmic-input', rows: '8', required: true,
+      placeholder: 'Write your prompt using [variable-names]…'
+    }),
     h('div', { class: 'form-text' }, h('i', { class: 'bi bi-info-circle me-1 text-white' }), 'Use [variable-name] format for variables.')
   );
-  const parseBtn = h('button', { type: 'button', class: 'btn btn-info cosmic-btn', id: 'parseBtn', 'data-ripple': '' }, h('i', { class: 'bi bi-search me-1' }), 'Parse variables');
+  const parseBtn = h('button', { type: 'button', class: 'btn btn-info cosmic-btn', id: 'parseBtn', 'data-ripple': '' },
+    h('i', { class: 'bi bi-search me-1' }), 'Parse variables'
+  );
 
   const configSection = h('div', { id: 'varConfig', style: 'display:none;' },
     h('hr'),
@@ -506,34 +617,489 @@ async function renderTemplates() {
     h('p', { class: 'text-secondary' }, 'Define labels and input types for each detected variable.'),
     h('div', { id: 'varConfigContainer' }),
     h('div', { class: 'd-flex gap-2 mt-3 justify-content-end' },
-      h('button', { type: 'button', class: 'btn btn-secondary cosmic-btn', id: 'cancelCfg', 'data-ripple': '' }, h('i', { class: 'bi bi-x-circle me-1' }), 'Cancel'),
-      h('button', { type: 'button', class: 'btn btn-success cosmic-btn', id: 'saveTpl', 'data-ripple': '' }, h('i', { class: 'bi bi-save me-1' }), 'Save Template')
+      h('button', { type: 'button', class: 'btn btn-secondary cosmic-btn', id: 'cancelCfg', 'data-ripple': '' },
+        h('i', { class: 'bi bi-x-circle me-1' }), 'Cancel'
+      ),
+      h('button', { type: 'button', class: 'btn btn-success cosmic-btn', id: 'saveTpl', 'data-ripple': '' },
+        h('i', { class: 'bi bi-save me-1' }), 'Save Template'
+      )
     )
   );
 
-  form.append(nameGroup, textGroup, parseBtn, configSection);
+  form.append(nameRow, textGroup, parseBtn, configSection);
   body.append(form);
   card.append(body);
+  root.appendChild(card);
 
-  // Existing templates
-  const listCard = h('div', { class: 'card card-surface mt-3' });
+  // ── Existing Templates Card ──────────────────────────────────────────────
+  const listCard = h('div', { class: 'card card-surface' });
   const listBody = h('div', { class: 'card-body' });
-  const listHeader = h('div', { class: 'd-flex justify-content-between align-items-center mb-2' },
-    h('h5', { class: 'mb-0' }, 'Existing Templates'),
-    h('div', {},
-      h('span', { class: 'badge text-bg-secondary', id: 'tplCountBadge' }, Store.state.templates.length + ' total')
+
+  // Header row
+  const listHeaderRow = h('div', { class: 'd-flex justify-content-between align-items-center mb-3 flex-wrap gap-2' },
+    h('h5', { class: 'mb-0' },
+      h('i', { class: 'bi bi-table me-2' }), 'Existing Templates ',
+      h('span', { class: 'badge text-bg-secondary', id: 'tplCountBadge' }, '0 total')
+    ),
+    h('div', { class: 'd-flex gap-2 flex-wrap align-items-center', id: 'bulkActionsBar', style: 'display:none!important' },
+      h('span', { class: 'badge bg-primary', id: 'selectedCountBadge' }, '0 selected'),
+      h('div', { class: 'btn-group' },
+        h('button', { class: 'btn btn-sm btn-outline-warning cosmic-btn', id: 'bulkCategoryBtn' },
+          h('i', { class: 'bi bi-tag me-1' }), 'Set Category'
+        ),
+        h('button', { class: 'btn btn-sm btn-outline-info cosmic-btn', id: 'bulkGroupBtn' },
+          h('i', { class: 'bi bi-collection me-1' }), 'Create Group'
+        ),
+        h('button', { class: 'btn btn-sm btn-outline-info cosmic-btn', id: 'bulkExportBtn' },
+          h('i', { class: 'bi bi-download me-1' }), 'Export Selected'
+        ),
+        h('button', { class: 'btn btn-sm btn-outline-danger cosmic-btn', id: 'bulkDeleteBtn' },
+          h('i', { class: 'bi bi-trash me-1' }), 'Delete Selected'
+        ),
+        h('button', { class: 'btn btn-sm btn-outline-secondary cosmic-btn', id: 'clearSelBtn' }, 'Clear')
+      )
     )
   );
-  const list = h('div', { id: 'tplList', class: 'list-group' });
-  listBody.append(listHeader, list);
-  listCard.append(listBody);
 
-  root.append(header, card, listCard);
+  // Filter row
+  const filterRow = h('div', { class: 'd-flex gap-2 mb-3 flex-wrap align-items-center' });
+  const filterInput = h('input', {
+    type: 'search', class: 'form-control cosmic-input', id: 'tplFilter',
+    placeholder: '\uD83D\uDD0D Filter by name, variable, category…', style: 'max-width:340px;'
+  });
+  filterRow.appendChild(filterInput);
 
-  // Load list
-  renderTemplateList();
+  // Category pill buttons
+  const catPills = h('div', { class: 'd-flex gap-1 flex-wrap' });
+  ['all', 'Content', 'Schema', 'QA', 'Coding', 'Rich Media', 'Ungrouped'].forEach(cat => {
+    const cs = getCatStyle(cat);
+    const isActive = cat === 'all'; // default active
+    const btn = h('button', {
+      class: 'btn btn-sm cosmic-btn cat-pill',
+      'data-cat': cat,
+      style: isActive
+        ? `background:${cs.bg};color:${cs.text};border-color:${cs.bg}`
+        : `background:transparent;color:${cs.bg};border:1px solid ${cs.bg}`
+    }, cs.emoji + '\u00A0' + (cat === 'all' ? 'All' : cat));
+    catPills.appendChild(btn);
+  });
+  filterRow.appendChild(catPills);
 
-  // Behaviors
+  // Track active pill for re-styling on click (stored on the container)
+  catPills._activeCat = 'all';
+
+  // Table
+  const tableWrap = h('div', { class: 'table-responsive' });
+  const table = h('table', { class: 'table table-hover align-middle', id: 'tplTable' });
+
+  // Build thead with sort headers
+  const sortCols = [
+    { key: 'select', label: h('input', { type: 'checkbox', class: 'form-check-input', id: 'selectAll' }), nosort: true, width: '30px' },
+    { key: 'template_name', label: 'Name' },
+    { key: 'category', label: 'Category' },
+    { key: 'group_name', label: 'Group' },
+    { key: 'use_count', label: 'Uses' },
+    { key: 'created_at', label: 'Created' },
+    { key: 'actions', label: '', nosort: true, width: '120px' },
+  ];
+  const thead = h('thead');
+  const headRow = h('tr');
+  sortCols.forEach(col => {
+    const th = h('th', {});
+    if (col.width) th.style.width = col.width;
+    if (col.nosort) {
+      if (typeof col.label === 'string') th.textContent = col.label;
+      else th.appendChild(col.label);
+    } else {
+      const btn = h('button', { class: 'btn btn-link text-white p-0 fw-bold text-decoration-none sort-header', 'data-key': col.key },
+        col.label, h('i', { class: 'bi bi-arrow-down-up ms-1 opacity-50', id: 'sort-icon-' + col.key })
+      );
+      btn.addEventListener('click', () => {
+        if (sortKey === col.key) { sortDir *= -1; } else { sortKey = col.key; sortDir = 1; }
+        renderTemplateList();
+      });
+      th.appendChild(btn);
+    }
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+
+  const tbody = h('tbody', { id: 'tplTbody' });
+  table.append(thead, tbody);
+  tableWrap.appendChild(table);
+
+  listBody.append(listHeaderRow, filterRow, tableWrap);
+  listCard.appendChild(listBody);
+  root.appendChild(listCard);
+
+  // ── Render Template List ─────────────────────────────────────────────────
+  function renderTemplateList() {
+    const q = filterText.toLowerCase();
+    let items = Store.state.templates.filter(t => {
+      if (filterCategory === 'Ungrouped') return !t.category;
+      if (filterCategory !== 'all') return t.category === filterCategory;
+      return true;
+    }).filter(t => {
+      if (!q) return true;
+      return (t.template_name || '').toLowerCase().includes(q)
+        || (t.category || '').toLowerCase().includes(q)
+        || (t.group_name || '').toLowerCase().includes(q);
+    });
+
+    // Sort
+    items = items.slice().sort((a, b) => {
+      let va = a[sortKey] ?? '', vb = b[sortKey] ?? '';
+      if (sortKey === 'created_at') { va = new Date(va); vb = new Date(vb); }
+      if (sortKey === 'use_count') { va = Number(va); vb = Number(vb); }
+      if (va < vb) return -1 * sortDir;
+      if (va > vb) return 1 * sortDir;
+      return 0;
+    });
+
+    // Update sort icons
+    sortCols.filter(c => !c.nosort).forEach(col => {
+      const icon = document.getElementById('sort-icon-' + col.key);
+      if (!icon) return;
+      if (sortKey === col.key) {
+        icon.className = 'bi ms-1 ' + (sortDir > 0 ? 'bi-arrow-up' : 'bi-arrow-down');
+        icon.classList.remove('opacity-50');
+      } else {
+        icon.className = 'bi bi-arrow-down-up ms-1 opacity-50';
+      }
+    });
+
+    // Count badge
+    const badge = document.getElementById('tplCountBadge');
+    if (badge) badge.textContent = items.length + ' of ' + Store.state.templates.length;
+
+    tbody.innerHTML = '';
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No templates found.</td></tr>';
+      return;
+    }
+
+    items.forEach(t => {
+      const isSelected = selectedIds.has(t.id);
+      const tr = h('tr', { class: isSelected ? 'table-active' : '' });
+
+      // Checkbox
+      const cb = h('input', { type: 'checkbox', class: 'form-check-input tpl-checkbox', 'data-id': String(t.id) });
+      cb.checked = isSelected;
+      cb.addEventListener('change', () => {
+        if (cb.checked) { selectedIds.add(t.id); } else { selectedIds.delete(t.id); }
+        updateBulkBar();
+        tr.classList.toggle('table-active', cb.checked);
+      });
+      tr.appendChild(h('td', {}, cb));
+
+      // Name + group dot
+      const nameCell = h('td', {});
+      if (t.group_name && t.group_color) {
+        nameCell.appendChild(h('span', { class: 'me-1', style: `color:${t.group_color};font-size:0.9em;` }, '●'));
+      }
+      nameCell.appendChild(document.createTextNode(t.template_name));
+      tr.appendChild(nameCell);
+
+      // Category badge
+      // Category badge — colored per category
+      const cs = getCatStyle(t.category);
+      const catBadge = t.category
+        ? h('span', { class: 'badge', style: `background:${cs.bg};color:${cs.text}` }, cs.emoji + '\u00A0' + t.category)
+        : h('span', { class: 'text-muted small' }, '\u2014');
+      tr.appendChild(h('td', {}, catBadge));
+
+      // Group
+      const grpEl = t.group_name
+        ? h('span', { class: 'badge', style: `background:${t.group_color || '#6c757d'};color:#fff` }, t.group_name)
+        : h('span', { class: 'text-muted small' }, '—');
+      tr.appendChild(h('td', {}, grpEl));
+
+      // Use count
+      const useEl = h('td', { class: 'text-center' },
+        h('span', { class: 'badge ' + (t.use_count > 10 ? 'bg-success' : t.use_count > 0 ? 'bg-info text-dark' : 'text-bg-secondary') },
+          t.use_count || 0
+        )
+      );
+      tr.appendChild(useEl);
+
+      // Date
+      const dateStr = t.created_at ? new Date(t.created_at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—';
+      tr.appendChild(h('td', { class: 'text-muted small', style: 'white-space:nowrap' }, dateStr));
+
+      // Actions
+      const actCell = h('td', {});
+      const actDiv = h('div', { class: 'd-flex gap-1' });
+      actDiv.appendChild(h('button', {
+        class: 'btn btn-sm btn-outline-light cosmic-btn', title: 'Edit', 'data-ripple': '',
+        onclick: () => openEditTemplateModal(t.id)
+      }, h('i', { class: 'bi bi-pencil' })));
+      actDiv.appendChild(h('a', {
+        href: '#/generate', class: 'btn btn-sm btn-outline-info cosmic-btn', title: 'Use in Generate',
+        onclick: () => {
+          setTimeout(() => {
+            const sel = $('#genTemplate');
+            if (sel) { sel.value = t.id; sel.dispatchEvent(new Event('change')); }
+          }, 0);
+        }
+      }, h('i', { class: 'bi bi-play' })));
+      actDiv.appendChild(h('button', {
+        class: 'btn btn-sm btn-outline-danger cosmic-btn', title: 'Delete', 'data-ripple': '',
+        onclick: async () => {
+          const ok = await confirmDialog({ title: 'Delete template?', body: `Delete "${t.template_name}"? This cannot be undone.`, okText: 'Delete' });
+          if (!ok) return;
+          try {
+            const result = await api.del('templates.php', `id=${encodeURIComponent(t.id)}`);
+            if (result && result.success === false) throw new Error(result.error || 'Failed to delete');
+            toast('Template deleted', 'success');
+            await loadTemplates(true);
+            selectedIds.delete(t.id);
+            renderTemplateList();
+          } catch (e) { toast('Delete failed: ' + e.message, 'danger'); }
+        }
+      }, h('i', { class: 'bi bi-trash' })));
+      actCell.appendChild(actDiv);
+      tr.appendChild(actCell);
+
+      tbody.appendChild(tr);
+    });
+
+    updateSelectAll();
+  }
+
+  function updateBulkBar() {
+    const bar = document.getElementById('bulkActionsBar');
+    const badge = document.getElementById('selectedCountBadge');
+    if (!bar) return;
+    if (selectedIds.size > 0) {
+      bar.style.removeProperty('display');
+      bar.style.display = 'flex';
+    } else {
+      bar.style.display = 'none';
+    }
+    if (badge) badge.textContent = selectedIds.size + ' selected';
+  }
+
+  function updateSelectAll() {
+    const sa = document.getElementById('selectAll');
+    if (!sa) return;
+    const allVisible = [...tbody.querySelectorAll('.tpl-checkbox')];
+    sa.checked = allVisible.length > 0 && allVisible.every(cb => cb.checked);
+    sa.indeterminate = !sa.checked && allVisible.some(cb => cb.checked);
+  }
+
+  // Select all
+  document.getElementById('selectAll')?.addEventListener('change', function () {
+    tbody.querySelectorAll('.tpl-checkbox').forEach(cb => {
+      cb.checked = this.checked;
+      const id = parseInt(cb.dataset.id);
+      if (this.checked) { selectedIds.add(id); } else { selectedIds.delete(id); }
+      cb.closest('tr')?.classList.toggle('table-active', this.checked);
+    });
+    updateBulkBar();
+  });
+
+  // Filter input
+  filterInput.addEventListener('input', () => { filterText = filterInput.value.trim(); renderTemplateList(); });
+
+  // Category pills — colored active/inactive states
+  document.querySelectorAll('.cat-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      filterCategory = btn.dataset.cat;
+      // Re-style all pills
+      document.querySelectorAll('.cat-pill').forEach(b => {
+        const bcs = getCatStyle(b.dataset.cat);
+        b.style.background = 'transparent';
+        b.style.color = bcs.bg;
+        b.style.borderColor = bcs.bg;
+      });
+      // Highlight active pill as filled
+      const acs = getCatStyle(filterCategory);
+      btn.style.background = acs.bg;
+      btn.style.color = acs.text;
+      btn.style.borderColor = acs.bg;
+      renderTemplateList();
+    });
+  });
+
+  // ── Bulk Actions ─────────────────────────────────────────────────────────
+  document.getElementById('clearSelBtn')?.addEventListener('click', () => {
+    selectedIds.clear();
+    tbody.querySelectorAll('.tpl-checkbox').forEach(cb => { cb.checked = false; cb.closest('tr')?.classList.remove('table-active'); });
+    updateBulkBar(); updateSelectAll();
+  });
+
+  document.getElementById('bulkCategoryBtn')?.addEventListener('click', async () => {
+    if (!selectedIds.size) return;
+
+    // Build the form body as a real DOM node
+    const bodyNode = h('div', {},
+      h('label', { class: 'form-label fw-bold mb-2' },
+        `Category for ${selectedIds.size} template${selectedIds.size !== 1 ? 's' : ''}:`
+      ),
+      (() => {
+        const sel = h('select', { class: 'form-select cosmic-input', id: 'bulkCatSel' });
+        [['', '\u2014 Remove category \u2014'], ['Content', '\uD83D\uDCDD Content'],
+        ['Schema', '\uD83D\uDCCA Schema'], ['QA', '\u2714 QA'],
+        ['Coding', '\uD83D\uDCBB Coding'], ['Rich Media', '\uD83C\uDF9E Rich Media']
+        ].forEach(([val, label]) => sel.appendChild(h('option', { value: val }, label)));
+        return sel;
+      })()
+    );
+
+    const ok = await confirmDialog({
+      title: 'Set Category',
+      body: bodyNode,
+      okText: 'Apply',
+      okClass: 'btn-primary'
+    });
+    if (!ok) return;
+    const cat = document.getElementById('bulkCatSel')?.value ?? null;
+    try {
+      await api.templateAction({ action: 'bulk_category', ids: [...selectedIds], category: cat || null });
+      toast('Category updated', 'success');
+      await loadTemplates(true);
+      renderTemplateList();
+    } catch (e) { toast('Error: ' + e.message, 'danger'); }
+  });
+
+  document.getElementById('bulkGroupBtn')?.addEventListener('click', async () => {
+    if (selectedIds.size < 1) { toast('Select at least 1 template', 'warning'); return; }
+    const colorSwatches = [
+      { name: 'Rose', value: '#e11d48' }, { name: 'Orange', value: '#ea580c' },
+      { name: 'Amber', value: '#d97706' }, { name: 'Lime', value: '#65a30d' },
+      { name: 'Emerald', value: '#059669' }, { name: 'Teal', value: '#0891b2' },
+      { name: 'Blue', value: '#2563eb' }, { name: 'Violet', value: '#7c3aed' },
+      { name: 'Pink', value: '#db2777' }, { name: 'Slate', value: '#475569' }
+    ];
+
+    // Build body as a DOM node
+    const swatchRow = h('div', { class: 'd-flex flex-wrap gap-1 mt-1' });
+    colorSwatches.forEach((c, idx) => {
+      const radio = h('input', { type: 'radio', name: 'grpColor', value: c.value, class: 'visually-hidden grp-color-radio', id: 'gc_' + idx });
+      if (idx === 6) radio.defaultChecked = true; // default: Blue
+      const swatch = h('span', {
+        class: 'grp-swatch', title: c.name,
+        style: `display:inline-block;width:28px;height:28px;border-radius:50%;background:${c.value};` +
+          `border:${idx === 6 ? '3px solid #fff' : '2px solid transparent'};cursor:pointer;transition:border .15s`
+      });
+      // Click the swatch → check the radio + update borders
+      swatch.addEventListener('click', () => {
+        radio.checked = true;
+        swatchRow.querySelectorAll('.grp-swatch').forEach(s => { s.style.border = '2px solid transparent'; });
+        swatch.style.border = '3px solid #fff';
+      });
+      const lbl = h('label', { for: 'gc_' + idx, title: c.name, style: 'cursor:pointer;margin:0' }, radio, swatch);
+      swatchRow.appendChild(lbl);
+    });
+
+    const bodyNode = h('div', {},
+      h('div', { class: 'mb-3' },
+        h('label', { class: 'form-label fw-bold mb-1' }, 'Group Name:'),
+        h('input', {
+          class: 'form-control cosmic-input', id: 'bulkGroupName',
+          placeholder: 'e.g. Marketing Templates'
+        })
+      ),
+      h('div', {},
+        h('label', { class: 'form-label fw-bold mb-1' }, 'Group Color:'),
+        swatchRow
+      )
+    );
+
+    const ok = await confirmDialog({
+      title: 'Create / Assign Group',
+      body: bodyNode,
+      okText: 'Assign Group',
+      okClass: 'btn-primary'
+    });
+    if (!ok) return;
+    const groupName = document.getElementById('bulkGroupName')?.value.trim();
+    if (!groupName) { toast('Please enter a group name', 'warning'); return; }
+    const checkedColor = document.querySelector('input[name="grpColor"]:checked');
+    const groupColor = checkedColor ? checkedColor.value : '#2563eb';
+    try {
+      await api.templateAction({ action: 'bulk_group', ids: [...selectedIds], group_name: groupName, group_color: groupColor });
+      toast('Group assigned to ' + selectedIds.size + ' template(s)', 'success');
+      await loadTemplates(true);
+      renderTemplateList();
+    } catch (e) { toast('Error: ' + e.message, 'danger'); }
+  });
+
+  // (Swatch interaction is now handled inline inside each swatch listener above)
+
+  document.getElementById('bulkExportBtn')?.addEventListener('click', async () => {
+    if (!selectedIds.size) return;
+    await doExport([...selectedIds]);
+  });
+
+  document.getElementById('bulkDeleteBtn')?.addEventListener('click', async () => {
+    if (!selectedIds.size) return;
+    const ok = await confirmDialog({
+      title: 'Delete ' + selectedIds.size + ' templates?',
+      body: 'This cannot be undone.',
+      okText: 'Delete All'
+    });
+    if (!ok) return;
+    try {
+      await api.templateAction({ action: 'bulk_delete', ids: [...selectedIds] });
+      toast('Deleted ' + selectedIds.size + ' templates', 'success');
+      selectedIds.clear();
+      await loadTemplates(true);
+      renderTemplateList();
+    } catch (e) { toast('Error: ' + e.message, 'danger'); }
+  });
+
+  // ── Export ────────────────────────────────────────────────────────────────
+  async function doExport(ids) {
+    try {
+      const payload = ids ? { action: 'export', ids } : { action: 'export' };
+      const res = await api.templateAction(payload);
+      const blob = new Blob([JSON.stringify(res, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = h('a', { href: url, download: 'templates-export-' + new Date().toISOString().slice(0, 10) + '.json' });
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast('Exported ' + res.templates.length + ' templates', 'success');
+    } catch (e) { toast('Export failed: ' + e.message, 'danger'); }
+  }
+
+  document.getElementById('exportTplBtn')?.addEventListener('click', () => {
+    if (selectedIds.size) doExport([...selectedIds]);
+    else doExport(null);
+  });
+
+  // ── Import ────────────────────────────────────────────────────────────────
+  document.getElementById('importTplBtn')?.addEventListener('click', () => {
+    const inp = h('input', { type: 'file', accept: '.json', style: 'display:none' });
+    document.body.appendChild(inp);
+    inp.addEventListener('change', async () => {
+      const file = inp.files[0];
+      if (!file) { inp.remove(); return; }
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const templates = data.templates || (Array.isArray(data) ? data : null);
+        if (!templates) throw new Error('Invalid format — expected { templates: [...] }');
+        const res = await api.templateAction({ action: 'import', templates });
+        toast(`Imported ${res.imported} templates (${res.skipped} skipped as duplicates)`, 'success');
+        await loadTemplates(true);
+        renderTemplateList();
+      } catch (e) { toast('Import failed: ' + e.message, 'danger'); }
+      finally { inp.remove(); }
+    });
+    inp.click();
+  });
+
+  // ── Standard Marketing Templates (GitHub) ────────────────────────────────
+  // Visible "Get Standard Templates" link
+  root.appendChild(h('div', { class: 'text-center mt-3 mb-2' },
+    h('a', {
+      href: 'https://github.com/search?q=marketing+prompt+templates+json&type=repositories',
+      target: '_blank', class: 'btn btn-sm btn-outline-secondary cosmic-btn'
+    }, h('i', { class: 'bi bi-github me-1' }), 'Browse Standard Marketing Templates on GitHub')
+  ));
+
+  // ── Parse variables ──────────────────────────────────────────────────────
   let extractedVariables = [];
 
   $('#parseBtn').addEventListener('click', () => {
@@ -541,10 +1107,8 @@ async function renderTemplates() {
     const text = $('#tplText').value.trim();
     if (!name) return toast('Please enter a template name', 'warning');
     if (!text) return toast('Please enter prompt text', 'warning');
-
     const regex = /\[([^\]]+)\]/g;
-    extractedVariables = Array.from(text.matchAll(regex)).map(m => m[1]);
-    extractedVariables = [...new Set(extractedVariables)];
+    extractedVariables = [...new Set(Array.from(text.matchAll(regex)).map(m => m[1]))];
     if (!extractedVariables.length) {
       $('#varConfig').style.display = 'none';
       return toast('No variables found. Use [variable-name] format.', 'info');
@@ -564,6 +1128,7 @@ async function renderTemplates() {
   $('#saveTpl').addEventListener('click', async () => {
     const name = $('#tplName').value.trim();
     const text = $('#tplText').value.trim();
+    const category = $('#tplCategory')?.value || null;
     if (!name || !text) return toast('Please fill in all required fields', 'warning');
     try {
       const variables = extractedVariables.map((varName, i) => {
@@ -572,10 +1137,8 @@ async function renderTemplates() {
         if (!label) throw new Error(`Please provide a label for "${varName}"`);
         return { variable_name: varName, field_label: label, field_type: type };
       });
-
-      const result = await api.post('templates.php', { template_name: name, prompt_text: text, variables });
+      const result = await api.post('templates.php', { template_name: name, prompt_text: text, category, variables });
       if (result && result.success === false) throw new Error(result.error || 'Failed to save template');
-
       toast('Template created!', 'success');
       $('#tplForm').reset(); $('#varConfig').style.display = 'none'; extractedVariables = [];
       await loadTemplates(true);
@@ -608,57 +1171,215 @@ async function renderTemplates() {
     return row;
   }
 
-  function renderTemplateList() {
-    const q = Store.state.searchQuery;
-    const items = Store.state.templates
-      .filter(t => !q || (t.template_name?.toLowerCase().includes(q)));
-    list.innerHTML = '';
-    if (!items.length) {
-      list.innerHTML = `<div class="text-center text-muted py-4">No templates found.</div>`;
-      return;
-    }
-    items.forEach(t => {
-      const item = h('div', { class: 'list-group-item d-flex w-100 justify-content-between align-items-center glass mb-2' },
-        h('div', {},
-          h('div', { class: 'fw-semibold' }, t.template_name),
-          h('small', { class: 'text-muted' }, (t.created_at ? new Date(t.created_at).toLocaleString() : ''))
-        ),
-        h('div', { class: 'd-flex gap-2' },
-          h('button', { class: 'btn btn-sm btn-outline-light cosmic-btn', title: 'Edit', 'data-ripple': '', onclick: () => openEditTemplateModal(t.id) }, h('i', { class: 'bi bi-pencil' })),
-          h('a', {
-            href: `#/generate`, class: 'btn btn-sm btn-outline-info cosmic-btn', title: 'Use in Generate', 'data-ripple': '', onclick: (e) => {
-              setTimeout(async () => {
-                const sel = $('#genTemplate');
-                if (sel) { sel.value = t.id; sel.dispatchEvent(new Event('change')); }
-              }, 0);
-            }
-          }, h('i', { class: 'bi bi-play' })),
-          h('button', {
-            class: 'btn btn-sm btn-outline-danger cosmic-btn', title: 'Delete', 'data-ripple': '', onclick: async () => {
-              const ok = await confirmDialog({ title: 'Delete template?', body: `Delete "${t.template_name}"? This cannot be undone.`, okText: 'Delete' });
-              if (!ok) return;
-              try {
-                const result = await api.del('templates.php', `id=${encodeURIComponent(t.id)}`);
-                if (result && result.success === false) throw new Error(result.error || 'Failed to delete');
-                toast('Template deleted', 'success');
-                await loadTemplates(true);
-                renderTemplateList();
-              } catch (e) { toast('Delete failed: ' + e.message, 'danger'); }
-            }
-          }, h('i', { class: 'bi bi-trash' }))
-        )
-      );
-      list.append(item);
-    });
-  }
-
   // Re-render list on search update
   const unsub = Store.subscribe(() => renderTemplateList());
   const onHash = () => { window.removeEventListener('hashchange', onHash); unsub(); };
   window.addEventListener('hashchange', onHash);
+
+  // Initial render
+  renderTemplateList();
 }
 
 // History view
+
+// --- Data Profiles ---
+async function renderProfiles() {
+  const root = $('#view-root');
+  if (!root) return;
+  root.innerHTML = '';
+
+  // 1. Initial layout
+  const header = h('div', { class: 'd-flex justify-content-between align-items-center mb-4 flex-wrap gap-2' },
+    h('div', {},
+      h('h3', { class: 'text-gradient mb-0' }, h('i', { class: 'bi bi-person-lines-fill me-2' }), 'Data Profiles'),
+      h('p', { class: 'text-muted mb-0 small' }, 'Manage prepopulated data for your prompts')
+    ),
+    h('button', { class: 'btn btn-primary cosmic-btn', id: 'newProfileBtn' }, h('i', { class: 'bi bi-plus-lg me-1' }), 'New Profile')
+  );
+
+  const container = h('div', { class: 'row g-4' });
+  const listCol = h('div', { class: 'col-md-4' });
+  const listCard = h('div', { class: 'card h-100 glass' });
+  const listHeader = h('div', { class: 'card-header bg-transparent border-bottom glass-brd fw-bold' }, 'Your Profiles');
+  const listBody = h('div', { class: 'list-group list-group-flush', id: 'profilesList' });
+
+  listCard.append(listHeader, listBody);
+  listCol.append(listCard);
+
+  const formCol = h('div', { class: 'col-md-8' });
+  const formCard = h('div', { class: 'card h-100 glass' });
+
+  // Form container: initially show placeholder or form
+  const formBody = h('div', { class: 'card-body', id: 'profileFormContainer' });
+  formBody.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-arrow-left me-2"></i>Select a profile to edit</div>';
+
+  formCard.append(formBody);
+  formCol.append(formCard);
+
+  container.append(listCol, formCol);
+  root.append(header, container);
+
+  // 2. State & Data Loading
+  let profiles = [];
+  let masterVariables = [];
+  let currentProfileId = null;
+
+  try {
+    const [pRes, vRes] = await Promise.all([
+      api.get('profiles.php'),
+      api.get('profiles.php?action=variables')
+    ]);
+    profiles = pRes || [];
+    masterVariables = vRes || [];
+    renderProfileList();
+  } catch (e) {
+    toast('Error loading profile data: ' + e.message, 'danger');
+  }
+
+  // 3. Render List
+  function renderProfileList() {
+    listBody.innerHTML = '';
+    if (!profiles.length) {
+      listBody.innerHTML = '<div class="text-center p-3 text-muted small">No profiles yet.</div>';
+      return;
+    }
+    profiles.forEach(p => {
+      const item = h('button', {
+        class: `list-group-item list-group-item-action ${p.id === currentProfileId ? 'active' : ''}`,
+        type: 'button'
+      }, p.profile_name);
+      item.onclick = () => loadProfileForm(p.id);
+      listBody.append(item);
+    });
+  }
+
+  // 4. Load Form
+  function loadProfileForm(id) {
+    currentProfileId = id;
+    renderProfileList(); // update active state
+
+    const isNew = (id === 'new');
+    const data = isNew ? {} : (profiles.find(p => p.id === id)?.profile_data || {});
+    const name = isNew ? '' : (profiles.find(p => p.id === id)?.profile_name || '');
+
+    formBody.innerHTML = '';
+
+    // Header
+    const title = h('h5', { class: 'card-title mb-4 border-bottom pb-2' }, isNew ? 'Create New Profile' : `Edit: ${name}`);
+    formBody.append(title);
+
+    // Form
+    const form = h('form', { id: 'profileForm' });
+
+    // Name field
+    const nameGroup = h('div', { class: 'mb-4' });
+    nameGroup.append(
+      h('label', { class: 'form-label fw-bold' }, 'Profile Name'),
+      h('input', {
+        type: 'text',
+        class: 'form-control cosmic-input',
+        id: 'profileName',
+        value: name,
+        required: true,
+        placeholder: 'e.g. My Website, Client A, Marketing Campaign...'
+      })
+    );
+    form.append(nameGroup);
+
+    // Variables fields
+    if (masterVariables.length > 0) {
+      const varsContainer = h('div', { class: 'row g-3' });
+      const varsLabel = h('h6', { class: 'mb-2 text-muted uppercase small fw-bold' }, 'Default Values for Prompt Variables');
+      form.append(varsLabel, varsContainer);
+
+      masterVariables.forEach(v => {
+        const fieldVal = data[v.variable_name] || '';
+        const col = h('div', { class: 'col-md-6' });
+        col.append(
+          h('label', { class: 'form-label small mb-1' }, v.field_label || formatLabel(v.variable_name)),
+          h(v.field_type === 'textarea' ? 'textarea' : 'input', {
+            class: 'form-control cosmic-input form-control-sm',
+            name: v.variable_name,
+            rows: v.field_type === 'textarea' ? 2 : 1,
+            value: fieldVal,
+            placeholder: `Default for [${v.variable_name}]`
+          })
+        );
+        varsContainer.append(col);
+      });
+    } else {
+      form.append(h('div', { class: 'alert alert-info small' }, 'No variables found in any templates yet. Create templates first to populate this form.'));
+    }
+
+    // Actions
+    const actions = h('div', { class: 'd-flex justify-content-end gap-2 mt-4 pt-3 border-top' });
+
+    if (!isNew) {
+      const delBtn = h('button', { type: 'button', class: 'btn btn-outline-danger', id: 'delProfileBtn' },
+        h('i', { class: 'bi bi-trash me-1' }), 'Delete Profile'
+      );
+      delBtn.onclick = async () => {
+        if (!confirm('Are you sure you want to delete this profile?')) return;
+        try {
+          await api.del(`profiles.php?id=${id}`);
+          toast('Profile deleted', 'success');
+          profiles = profiles.filter(p => p.id !== id);
+          currentProfileId = null;
+          renderProfileList();
+          formBody.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-arrow-left me-2"></i>Select a profile to edit</div>';
+        } catch (e) {
+          toast(e.message, 'danger');
+        }
+      };
+      actions.append(delBtn);
+    }
+
+    const saveBtn = h('button', { type: 'submit', class: 'btn btn-success cosmic-btn' },
+      h('i', { class: 'bi bi-save me-1' }), 'Save Profile'
+    );
+    actions.append(saveBtn);
+    form.append(actions);
+
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const newName = $('#profileName').value.trim();
+      if (!newName) return toast('Profile name required', 'warning');
+
+      const formData = new FormData(form);
+      const profileData = {};
+      masterVariables.forEach(v => {
+        const val = form.elements[v.variable_name]?.value.trim();
+        if (val) profileData[v.variable_name] = val;
+      });
+
+      try {
+        const payload = { profile_name: newName, profile_data: profileData };
+        if (!isNew) payload.id = id;
+
+        const res = await api[isNew ? 'post' : 'put']('profiles.php', payload);
+        toast('Profile saved successfully', 'success');
+
+        // Reload profiles to get ID / updated data
+        const freshProfiles = await api.get('profiles.php');
+        profiles = freshProfiles || [];
+        // If new, switch to it or try to find by name
+        const savedId = res.id || (!isNew ? id : profiles.find(p => p.profile_name === newName)?.id);
+        if (savedId) currentProfileId = savedId;
+
+        renderProfileList();
+        loadProfileForm(currentProfileId);
+      } catch (err) {
+        toast('Save failed: ' + err.message, 'danger');
+      }
+    };
+
+    formBody.append(form);
+  }
+
+  // 5. Handlers
+  $('#newProfileBtn').onclick = () => loadProfileForm('new');
+}
+
 async function renderHistory() {
   await loadHistory();
   const root = $('#view-root');
@@ -833,6 +1554,456 @@ async function renderHistory() {
 }
 
 // Settings view
+// ─── Schema Generator ──────────────────────────────────────────────────────
+async function renderSchemaGen() {
+  const root = $('#view-root');
+  if (!root) return;
+  root.innerHTML = '';
+
+  // ── Load saved prompt templates ──────────────────────────────────────────
+  const defaultMarkdownTpl = 'Analyze the following webpage content and generate comprehensive, advanced JSON-LD structured data (Schema.org markup). Include all relevant schema types, properties, and nested entities. Output ONLY valid JSON-LD wrapped in <script type="application/ld+json"> tags.\n\nWebpage Content:\n[PAGE_MARKDOWN]';
+  const defaultUrlTpl = 'Analyze the following webpage URL and generate comprehensive, advanced JSON-LD structured data (Schema.org markup) for it. Include all relevant schema types, properties, and nested entities. Output ONLY valid JSON-LD wrapped in <script type="application/ld+json"> tags.\n\nPage URL: [PAGE_URL]';
+
+  let markdownTpl = defaultMarkdownTpl;
+  let urlTpl = defaultUrlTpl;
+  try {
+    const sg = await api.get('schema-settings.php');
+    if (sg && sg.prompt_template) markdownTpl = sg.prompt_template;
+    if (sg && sg.url_prompt_template) urlTpl = sg.url_prompt_template;
+  } catch { }
+
+  // ── Header ────────────────────────────────────────────────────────────────
+  root.appendChild(h('div', { class: 'd-flex align-items-center justify-content-between mb-4 flex-wrap gap-2' },
+    h('div', {},
+      h('h2', { class: 'text-gradient mb-0' }, h('i', { class: 'bi bi-braces me-2' }), 'Schema Generator'),
+      h('p', { class: 'text-muted mb-0 small' }, 'Import a webpage, paste Markdown, or batch-process a list of URLs \u2192 generate JSON-LD structured data via AI')
+    ),
+    h('a', { href: '#/settings', class: 'btn btn-outline-secondary btn-sm', id: 'sgSettingsLink' },
+      h('i', { class: 'bi bi-gear me-1' }), 'Prompt Settings'
+    )
+  ));
+
+  // ── Main card with 3-tab input nav ───────────────────────────────────────
+  const mainCard = h('div', { class: 'card card-surface mb-4' });
+  const mainBody = h('div', { class: 'card-body' });
+
+  mainBody.appendChild(h('div', { class: 'fw-bold mb-3 small text-uppercase text-muted' },
+    h('span', { class: 'badge bg-primary me-2' }, '1'), 'Choose Input Mode'
+  ));
+
+  // Tab nav
+  const tabNav = h('ul', { class: 'nav nav-tabs mb-3', role: 'tablist' },
+    h('li', { class: 'nav-item', role: 'presentation' },
+      h('button', {
+        class: 'nav-link active', id: 'sg-import-tab', type: 'button', role: 'tab',
+        'data-bs-toggle': 'tab', 'data-bs-target': '#sg-import-panel'
+      },
+        h('i', { class: 'bi bi-globe me-1' }), 'Import Webpage'
+      )
+    ),
+    h('li', { class: 'nav-item', role: 'presentation' },
+      h('button', {
+        class: 'nav-link', id: 'sg-paste-tab', type: 'button', role: 'tab',
+        'data-bs-toggle': 'tab', 'data-bs-target': '#sg-paste-panel'
+      },
+        h('i', { class: 'bi bi-clipboard-fill me-1' }), 'Paste Markdown'
+      )
+    ),
+    h('li', { class: 'nav-item', role: 'presentation' },
+      h('button', {
+        class: 'nav-link', id: 'sg-urls-tab', type: 'button', role: 'tab',
+        'data-bs-toggle': 'tab', 'data-bs-target': '#sg-urls-panel'
+      },
+        h('i', { class: 'bi bi-list-ul me-1' }), 'List of URLs'
+      )
+    )
+  );
+  mainBody.appendChild(tabNav);
+
+  // ── Tab: Import Webpage ──────────────────────────────────────────────────
+  const importPanel = h('div', { class: 'tab-pane fade show active', id: 'sg-import-panel', role: 'tabpanel' });
+  const urlInputGroup = h('div', { class: 'input-group mb-2' });
+  const urlInput = h('input', {
+    type: 'url', class: 'form-control cosmic-input', id: 'schemaUrl',
+    placeholder: 'https://example.com/your-page', autocomplete: 'url'
+  });
+  const crawlBtn = h('button', { class: 'btn btn-primary cosmic-btn', id: 'crawlBtn' },
+    h('i', { class: 'bi bi-cloud-download me-1' }), 'Import Page'
+  );
+  urlInputGroup.append(urlInput, crawlBtn);
+  importPanel.appendChild(urlInputGroup);
+  const crawlStatus = h('div', { id: 'crawlStatus', style: 'display:none' });
+  importPanel.appendChild(crawlStatus);
+  const mdBlock = h('div', { id: 'mdBlock', class: 'mt-3', style: 'display:none' });
+  mdBlock.appendChild(h('label', { class: 'form-label fw-semibold small' },
+    h('i', { class: 'bi bi-file-text me-1' }), 'Imported Markdown (editable)'
+  ));
+  const mdOutputArea = h('textarea', {
+    class: 'form-control cosmic-input font-monospace', id: 'mdOutput',
+    rows: '10', style: 'font-size:0.8rem;'
+  });
+  mdBlock.appendChild(mdOutputArea);
+  importPanel.appendChild(mdBlock);
+
+  // ── Tab: Paste Markdown ──────────────────────────────────────────────────
+  const pastePanel = h('div', { class: 'tab-pane fade', id: 'sg-paste-panel', role: 'tabpanel' });
+  pastePanel.appendChild(h('label', { class: 'form-label fw-semibold small mt-1' },
+    h('i', { class: 'bi bi-clipboard me-1' }), 'Paste Markdown Content'
+  ));
+  const pasteArea = h('textarea', {
+    class: 'form-control cosmic-input font-monospace', id: 'pasteMarkdown',
+    rows: '12', style: 'font-size:0.8rem;', placeholder: 'Paste webpage markdown content here\u2026'
+  });
+  pastePanel.appendChild(pasteArea);
+
+  // ── Tab: List of URLs ────────────────────────────────────────────────────
+  const urlsPanel = h('div', { class: 'tab-pane fade', id: 'sg-urls-panel', role: 'tabpanel' });
+  urlsPanel.appendChild(h('div', { class: 'alert alert-info d-flex align-items-start gap-2 mb-3 py-2 mt-1' },
+    h('i', { class: 'bi bi-info-circle mt-1 flex-shrink-0' }),
+    h('div', { class: 'small' },
+      'Paste one URL per line. Click ', h('strong', {}, 'Generate Advanced Schema'),
+      ' and each URL will be sent to the AI sequentially \u2014 results stream in below as they arrive.'
+    )
+  ));
+  urlsPanel.appendChild(h('label', { class: 'form-label fw-semibold small' },
+    h('i', { class: 'bi bi-list-ul me-1' }), 'URLs to Process ', h('span', { class: 'text-muted' }, '(one per line)')
+  ));
+  const urlListArea = h('textarea', {
+    class: 'form-control cosmic-input font-monospace', id: 'urlListInput',
+    rows: '10', style: 'font-size:0.85rem;',
+    placeholder: 'https://example.com/page-1\nhttps://example.com/page-2\nhttps://example.com/page-3'
+  });
+  urlsPanel.appendChild(urlListArea);
+
+  // Tab content wrapper
+  const tabContent = h('div', { class: 'tab-content' });
+  tabContent.append(importPanel, pastePanel, urlsPanel);
+  mainBody.appendChild(tabContent);
+
+  mainBody.appendChild(h('hr', { class: 'my-4' }));
+
+  // ── Step 2: AI Provider + Generate ───────────────────────────────────────
+  mainBody.appendChild(h('div', { class: 'fw-bold mb-3 small text-uppercase text-muted' },
+    h('span', { class: 'badge bg-success me-2' }, '2'), 'Select AI & Generate'
+  ));
+
+  const providerRow = h('div', { class: 'd-flex align-items-center gap-3 flex-wrap mb-3' });
+  const providerSel = h('select', {
+    class: 'form-select cosmic-input', id: 'sgAiProvider',
+    style: 'width:auto;min-width:210px;'
+  },
+    h('option', { value: 'claude' }, '\uD83E\uDD16 Claude (Anthropic)'),
+    h('option', { value: 'openai' }, '\uD83E\uDDE0 OpenAI (GPT-4o)'),
+    h('option', { value: 'gemini' }, '\u2728 Gemini (Google)')
+  );
+  const keyBadge = h('span', { id: 'sgKeyBadge' });
+  providerRow.append(
+    h('div', {}, h('label', { class: 'form-label small fw-bold mb-1' }, 'AI Provider'), h('div', {}, providerSel)),
+    h('div', { class: 'pt-3' }, keyBadge)
+  );
+  mainBody.appendChild(providerRow);
+
+  const genSchemaBtn = h('button', { class: 'btn btn-success cosmic-btn btn-lg', id: 'genSchemaBtn' },
+    h('i', { class: 'bi bi-stars me-2' }), 'Generate Advanced Schema'
+  );
+  mainBody.appendChild(genSchemaBtn);
+  mainCard.appendChild(mainBody);
+  root.appendChild(mainCard);
+
+  // ── Output Section ────────────────────────────────────────────────────────
+  const outputSection = h('div', { id: 'schemaOutputSection', style: 'display:none' });
+  const outputCard = h('div', { class: 'card card-surface' });
+  const outputBody = h('div', { class: 'card-body' });
+
+  const outputBtns = h('div', { class: 'd-flex gap-2 flex-wrap' },
+    h('button', { class: 'btn btn-outline-light btn-sm cosmic-btn', id: 'copySchemaBtn' },
+      h('i', { class: 'bi bi-clipboard me-1' }), 'Copy'
+    ),
+    h('button', { class: 'btn btn-warning btn-sm cosmic-btn', id: 'validateBtn' },
+      h('i', { class: 'bi bi-google me-1' }), 'Validate (G-Rich Results)'
+    )
+  );
+  outputBody.appendChild(h('div', { class: 'd-flex justify-content-between align-items-center mb-3 flex-wrap gap-2' },
+    h('h5', { class: 'mb-0' }, h('i', { class: 'bi bi-code-slash me-2' }), 'Generated Schema Output'),
+    outputBtns
+  ));
+
+  // Progress bar (URL list mode)
+  const batchProgress = h('div', { id: 'batchProgress', style: 'display:none', class: 'mb-3' });
+  const batchProgressBar = h('div', {
+    class: 'progress-bar progress-bar-striped progress-bar-animated bg-success',
+    role: 'progressbar', style: 'width:0%'
+  });
+  const batchProgressWrap = h('div', { class: 'progress mb-1', style: 'height:8px' });
+  batchProgressWrap.appendChild(batchProgressBar);
+  const batchProgressLabel = h('div', { class: 'text-muted small text-end', id: 'batchProgressLabel' });
+  batchProgress.append(batchProgressWrap, batchProgressLabel);
+
+  const schemaOutput = h('div', { id: 'schemaStreamOut', class: 'ai-response-content schema-output-box p-3' });
+  outputBody.append(batchProgress, schemaOutput);
+  outputCard.appendChild(outputBody);
+  outputSection.appendChild(outputCard);
+  root.appendChild(outputSection);
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  HELPERS
+  // ════════════════════════════════════════════════════════════════════════════
+
+  function getActiveTab() {
+    if (document.getElementById('sg-paste-tab')?.classList.contains('active')) return 'paste';
+    if (document.getElementById('sg-urls-tab')?.classList.contains('active')) return 'urls';
+    return 'import';
+  }
+
+  function updateKeyBadge() {
+    const prov = providerSel.value;
+    const key = localStorage.getItem('prompt-db-' + prov + '-key') || '';
+    if (key) {
+      keyBadge.textContent = '\u2713 API Key Set';
+      keyBadge.className = 'badge bg-success fs-6';
+      genSchemaBtn.disabled = false;
+    } else {
+      keyBadge.innerHTML = '\u26A0 No API key \u2014 <a href="#/settings" class="text-white text-decoration-underline">add in Settings \u2192 API Keys</a>';
+      keyBadge.className = 'badge bg-warning text-dark fs-6';
+      genSchemaBtn.disabled = true;
+    }
+  }
+  updateKeyBadge();
+  providerSel.addEventListener('change', updateKeyBadge);
+
+  // ── SSE streaming helper ──────────────────────────────────────────────────
+  // Streams SSE response into targetEl.textContent, returns full text string.
+  // Throws on API error events.
+  async function streamToElement(response, targetEl) {
+    targetEl.textContent = '';
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullText = '';
+    let streamError = null;
+
+    loop: while (true) {
+      let chunk;
+      try { chunk = await reader.read(); } catch { break; }
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep partial last line
+
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t.startsWith('data:')) continue;
+        const payload = t.slice(5).trim();
+        if (payload === '[DONE]') break loop;
+        let obj;
+        try { obj = JSON.parse(payload); } catch { continue; }
+        if (obj.error) { streamError = obj.error; break loop; }
+        if (typeof obj.text === 'string' && obj.text) {
+          fullText += obj.text;
+          targetEl.textContent = fullText;
+        }
+      }
+    }
+
+    if (streamError) throw new Error(streamError);
+    return fullText;
+  }
+
+  // ── Crawl ─────────────────────────────────────────────────────────────────
+  crawlBtn.addEventListener('click', async () => {
+    const url = urlInput.value.trim();
+    if (!url) { toast('Please enter a URL', 'warning'); return; }
+    crawlBtn.disabled = true;
+    crawlBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Importing\u2026';
+    crawlStatus.style.display = '';
+    crawlStatus.className = 'alert alert-info mt-2';
+    crawlStatus.textContent = 'Fetching and converting webpage\u2026';
+    mdBlock.style.display = 'none';
+    try {
+      const res = await api.post('crawl.php', { url });
+      if (res.error) throw new Error(res.error);
+      const md = res.markdown || '';
+      if (!md) throw new Error('No content extracted from that URL');
+      mdOutputArea.value = md;
+      mdBlock.style.display = '';
+      crawlStatus.className = 'alert alert-success mt-2';
+      crawlStatus.textContent = '\u2713 Imported "' + (res.title || url) + '" \u2014 ' + md.length.toLocaleString() + ' characters';
+      toast('Page imported successfully', 'success');
+    } catch (err) {
+      crawlStatus.className = 'alert alert-danger mt-2';
+      crawlStatus.textContent = '\u2717 ' + err.message;
+      toast(err.message, 'danger');
+    } finally {
+      crawlBtn.disabled = false;
+      crawlBtn.innerHTML = '<i class="bi bi-cloud-download me-1"></i>Import Page';
+    }
+  });
+  urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') crawlBtn.click(); });
+
+  // ── Generate Schema ───────────────────────────────────────────────────────
+  genSchemaBtn.addEventListener('click', async () => {
+    const provider = providerSel.value;
+    const apiKey = localStorage.getItem('prompt-db-' + provider + '-key') || '';
+    if (!apiKey) {
+      toast('No API key set for ' + provider + '. Go to Settings \u2192 API Keys.', 'warning');
+      return;
+    }
+
+    const mode = getActiveTab();
+
+    // ── URL List batch mode ──────────────────────────────────────────────
+    if (mode === 'urls') {
+      const rawUrls = urlListArea.value.trim();
+      if (!rawUrls) { toast('Paste at least one URL to process.', 'warning'); return; }
+      const urls = rawUrls.split('\n').map(u => u.trim()).filter(u => u.startsWith('http'));
+      if (!urls.length) { toast('No valid URLs found. Each URL must start with http.', 'warning'); return; }
+
+      outputSection.style.display = '';
+      batchProgress.style.display = '';
+      batchProgressBar.style.width = '0%';
+      batchProgressBar.classList.add('progress-bar-animated');
+      schemaOutput.innerHTML = '';
+      schemaOutput.dataset.schemaText = '';
+      outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      genSchemaBtn.disabled = true;
+      genSchemaBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing\u2026';
+
+      let allText = '';
+
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i];
+        const pct = Math.round((i / urls.length) * 100);
+        batchProgressBar.style.width = pct + '%';
+        batchProgressLabel.textContent = 'Processing ' + (i + 1) + ' of ' + urls.length + ': ' + url;
+
+        const urlHeader = h('div', { class: (i > 0 ? 'border-top pt-3 mt-3' : 'pt-1') });
+        const badge = h('span', { class: 'badge bg-primary me-2' }, (i + 1) + '/' + urls.length);
+        urlHeader.appendChild(h('div', { class: 'd-flex align-items-center mb-2' },
+          badge,
+          h('code', { class: 'small text-muted', style: 'word-break:break-all' }, url)
+        ));
+        const pre = h('pre', { class: 'schema-pre mb-0' });
+        urlHeader.appendChild(pre);
+        schemaOutput.appendChild(urlHeader);
+        pre.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        const prompt = urlTpl.replace('[PAGE_URL]', url);
+        try {
+          const response = await fetch(API_BASE + 'ai-chat.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, provider, api_key: apiKey })
+          });
+          if (!response.ok) {
+            const errJson = await response.json().catch(() => ({}));
+            throw new Error(errJson.error || 'HTTP ' + response.status);
+          }
+          const text = await streamToElement(response, pre);
+          allText += '\n\n/* === ' + url + ' === */\n' + text;
+          badge.className = 'badge bg-success me-2';
+        } catch (err) {
+          pre.textContent = '\u26A0 Error: ' + err.message;
+          pre.className = 'schema-pre text-danger mb-0';
+          badge.className = 'badge bg-danger me-2';
+          toast('Error on ' + url + ': ' + err.message, 'danger');
+        }
+      }
+
+      batchProgressBar.style.width = '100%';
+      batchProgressBar.classList.remove('progress-bar-animated');
+      batchProgressLabel.textContent = '\u2713 All ' + urls.length + ' URL' + (urls.length !== 1 ? 's' : '') + ' processed';
+      schemaOutput.dataset.schemaText = allText;
+      genSchemaBtn.disabled = false;
+      updateKeyBadge();
+      genSchemaBtn.innerHTML = '<i class="bi bi-stars me-2"></i>Generate Advanced Schema';
+      toast('Done! ' + urls.length + ' URL' + (urls.length !== 1 ? 's' : '') + ' processed', 'success');
+      return;
+    }
+
+    // ── Single page mode (import or paste) ────────────────────────────────
+    const markdown = mode === 'import' ? mdOutputArea.value.trim() : pasteArea.value.trim();
+    if (!markdown) {
+      toast(mode === 'import'
+        ? 'Import a webpage first \u2014 click "Import Page".'
+        : 'Paste some markdown content first.',
+        'warning');
+      return;
+    }
+
+    const prompt = markdownTpl.replace('[PAGE_MARKDOWN]', markdown);
+
+    outputSection.style.display = '';
+    batchProgress.style.display = 'none';
+    schemaOutput.innerHTML = '';
+    schemaOutput.dataset.schemaText = '';
+
+    const pre = h('pre', { class: 'schema-pre mb-0', id: 'schemaText' });
+    schemaOutput.appendChild(pre);
+    outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    genSchemaBtn.disabled = true;
+    genSchemaBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generating\u2026';
+
+    try {
+      const response = await fetch(API_BASE + 'ai-chat.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, provider, api_key: apiKey })
+      });
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || 'HTTP ' + response.status);
+      }
+      const fullText = await streamToElement(response, pre);
+      pre.dataset.schemaText = fullText;
+      schemaOutput.dataset.schemaText = fullText;
+      toast('Schema generated!', 'success');
+    } catch (err) {
+      schemaOutput.innerHTML = '<div class="alert alert-danger d-flex align-items-start gap-2"><i class="bi bi-exclamation-triangle mt-1"></i><div><strong>Error:</strong> ' + err.message + '</div></div>';
+      toast('Generation failed: ' + err.message, 'danger');
+    } finally {
+      genSchemaBtn.disabled = false;
+      updateKeyBadge();
+      genSchemaBtn.innerHTML = '<i class="bi bi-stars me-2"></i>Generate Advanced Schema';
+    }
+  });
+
+  // ── Copy ──────────────────────────────────────────────────────────────────
+  document.getElementById('copySchemaBtn').addEventListener('click', async () => {
+    const text = schemaOutput.dataset.schemaText
+      || document.getElementById('schemaText')?.dataset.schemaText
+      || document.getElementById('schemaText')?.textContent || '';
+    if (!text) { toast('Nothing to copy yet', 'warning'); return; }
+    try { await navigator.clipboard.writeText(text); toast('Schema copied to clipboard!', 'success'); }
+    catch { toast('Copy failed \u2014 try selecting text manually', 'danger'); }
+  });
+
+  // ── Validate with Google Rich Results ────────────────────────────────────
+  document.getElementById('validateBtn').addEventListener('click', async () => {
+    const pre = document.getElementById('schemaText');
+    const text = schemaOutput.dataset.schemaText || pre?.dataset.schemaText || pre?.textContent || '';
+    if (!text) { toast('Generate a schema first', 'warning'); return; }
+    try { await navigator.clipboard.writeText(text); } catch { }
+    toast('Schema copied! In Google Rich Results: click "Code" tab \u2192 paste \u2192 "Test Code"', 'info');
+    const win = window.open('https://search.google.com/test/rich-results', '_blank');
+    if (win) {
+      setTimeout(() => {
+        try {
+          for (const tab of win.document.querySelectorAll('[role="tab"]')) {
+            if (tab.textContent?.toLowerCase().includes('code')) { tab.click(); break; }
+          }
+          const ta = win.document.querySelector('textarea, [contenteditable="true"]');
+          if (ta) { ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true })); }
+          for (const btn of win.document.querySelectorAll('button')) {
+            if (btn.textContent?.toLowerCase().includes('test code')) { btn.click(); break; }
+          }
+        } catch { }
+      }, 3000);
+    }
+  });
+}
+
+// ─── Settings ───────────────────────────────────────────────────────────────
 function renderSettings() {
   const root = $('#view-root');
   root.innerHTML = '';
@@ -879,6 +2050,11 @@ function renderSettings() {
     h('li', { class: 'nav-item', role: 'presentation' },
       h('button', { class: 'nav-link', id: 'apikeys-tab', 'data-bs-toggle': 'tab', 'data-bs-target': '#apikeys-panel', type: 'button', role: 'tab' },
         h('i', { class: 'bi bi-key me-2' }), 'API Keys'
+      )
+    ),
+    h('li', { class: 'nav-item', role: 'presentation' },
+      h('button', { class: 'nav-link', id: 'schemagen-tab', 'data-bs-toggle': 'tab', 'data-bs-target': '#schemagen-panel', type: 'button', role: 'tab' },
+        h('i', { class: 'bi bi-braces me-2' }), 'Schema Gen Settings'
       )
     )
   );
@@ -965,12 +2141,127 @@ function renderSettings() {
           )
         )
       )
+    ),
+    // Schema Gen Settings Tab
+    h('div', { class: 'tab-pane fade', id: 'schemagen-panel', role: 'tabpanel' },
+      h('div', { class: 'card card-surface' },
+        h('div', { class: 'card-body' },
+          h('h5', { class: 'mb-1' }, h('i', { class: 'bi bi-braces me-2' }), 'Schema Generator — Prompt Templates'),
+          h('p', { class: 'text-muted mb-3' }, 'Customise the AI prompts used by the Schema Generator. Provider is selected on the Generator page; API keys are in the API Keys tab.'),
+          // Info banner
+          h('div', { class: 'alert alert-info d-flex align-items-start gap-2 mb-4 py-2' },
+            h('i', { class: 'bi bi-info-circle-fill mt-1 flex-shrink-0' }),
+            h('div', { class: 'small' },
+              h('strong', {}, 'AI Provider & Keys'), ': choose on the ',
+              h('a', { href: '#/schema', class: 'alert-link' }, 'Schema Generator page'),
+              '. Keys are set in the ',
+              h('a', { href: '#', id: 'sgGoApiKeys', class: 'alert-link' }, 'API Keys tab'), '.'
+            )
+          ),
+          // Template 1: Markdown
+          h('div', { class: 'mb-4' },
+            h('label', { class: 'form-label fw-bold' },
+              h('i', { class: 'bi bi-file-earmark-text me-1' }),
+              ' Template 1 — Import Webpage / Paste Markdown'
+            ),
+            h('div', { class: 'alert alert-secondary py-2 px-3 mb-2 small' },
+              h('i', { class: 'bi bi-info-circle me-1' }),
+              'Used when you import a URL or paste Markdown. Must include ',
+              h('code', {}, '[PAGE_MARKDOWN]'), ' where the content is injected.'
+            ),
+            h('textarea', {
+              class: 'form-control cosmic-input font-monospace',
+              id: 'sgPromptTemplate',
+              rows: '10',
+              placeholder: 'Analyze the following webpage content and generate JSON-LD...\n\n[PAGE_MARKDOWN]'
+            })
+          ),
+          // Template 2: URL List
+          h('div', { class: 'mb-4' },
+            h('label', { class: 'form-label fw-bold' },
+              h('i', { class: 'bi bi-list-ul me-1' }),
+              ' Template 2 — List of URLs'
+            ),
+            h('div', { class: 'alert alert-secondary py-2 px-3 mb-2 small' },
+              h('i', { class: 'bi bi-info-circle me-1' }),
+              'Used for the “List of URLs” tab. Must include ',
+              h('code', {}, '[PAGE_URL]'), ' where the URL is injected.'
+            ),
+            h('textarea', {
+              class: 'form-control cosmic-input font-monospace',
+              id: 'sgUrlPromptTemplate',
+              rows: '10',
+              placeholder: 'Analyze the following webpage URL and generate JSON-LD...\n\nPage URL: [PAGE_URL]'
+            })
+          ),
+          h('div', { class: 'd-flex justify-content-end' },
+            h('button', { class: 'btn btn-success cosmic-btn', id: 'sgSaveBtn' },
+              h('i', { class: 'bi bi-save me-1' }), 'Save Both Templates'
+            )
+          )
+        )
+      )
     )
   );
 
   root.append(header, tabNav, tabContent);
 
+  // ── Schema Gen Settings handlers ──────────────────────────────────────────
+  (async () => {
+    // Load both saved templates
+    try {
+      const sg = await api.get('schema-settings.php');
+      if (sg) {
+        if (sg.prompt_template) {
+          const el = $('#sgPromptTemplate');
+          if (el) el.value = sg.prompt_template;
+        }
+        if (sg.url_prompt_template) {
+          const el = $('#sgUrlPromptTemplate');
+          if (el) el.value = sg.url_prompt_template;
+        }
+      }
+    } catch { }
+
+    // "Go to API Keys" shortcut
+    $('#sgGoApiKeys')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('apikeys-tab')?.click();
+    });
+
+    // Save both templates
+    $('#sgSaveBtn')?.addEventListener('click', async () => {
+      const promptTemplate = $('#sgPromptTemplate')?.value?.trim() || '';
+      const urlPromptTemplate = $('#sgUrlPromptTemplate')?.value?.trim() || '';
+
+      if (!promptTemplate) { toast('Template 1 (Markdown) cannot be empty', 'warning'); return; }
+      if (!promptTemplate.includes('[PAGE_MARKDOWN]')) {
+        toast('Template 1 must include [PAGE_MARKDOWN]', 'warning'); return;
+      }
+      if (!urlPromptTemplate) { toast('Template 2 (URL List) cannot be empty', 'warning'); return; }
+      if (!urlPromptTemplate.includes('[PAGE_URL]')) {
+        toast('Template 2 must include [PAGE_URL]', 'warning'); return;
+      }
+
+      try {
+        const res = await api.post('schema-settings.php', {
+          provider: 'global',
+          prompt_template: promptTemplate,
+          url_prompt_template: urlPromptTemplate
+        });
+        if (res.success) {
+          toast('Both prompt templates saved!', 'success');
+        } else {
+          throw new Error(res.error || 'Save failed');
+        }
+      } catch (err) {
+        toast('Error saving: ' + err.message, 'danger');
+      }
+    });
+  })();
+
   // API Keys save handler
+
   $('#saveApiKeys')?.addEventListener('click', () => {
     const keys = [
       { key: 'prompt-db-claude-key', input: '#input-prompt-db-claude-key' },
@@ -1167,10 +2458,13 @@ async function openEditTemplateModal(templateId) {
     // Populate form
     $('#editTplName').value = detail.template_name || '';
     $('#editTplText').value = detail.prompt_text || '';
+    const catSel = $('#editTplCategory');
+    if (catSel) catSel.value = detail.category || '';
 
     const cont = $('#editVarContainer');
     cont.innerHTML = '';
     (detail.variables || []).forEach((v, i) => cont.append(editVariableRow(v, i)));
+    updateRowNumbers(cont);
 
     if (!editModal) editModal = new bootstrap.Modal($('#editTplModal'));
     editModal.show();
@@ -1188,8 +2482,26 @@ async function openEditTemplateModal(templateId) {
       toast('Re-parsed variables from prompt text', 'info');
     };
 
+    // Variable search
+    const varSearchInp = $('#editVarSearch');
+    if (varSearchInp) {
+      varSearchInp.addEventListener('input', () => {
+        const q = varSearchInp.value.toLowerCase();
+        cont.querySelectorAll('.variable-row').forEach(row => {
+          const name = (row.querySelector('.evar-name')?.value || '').toLowerCase();
+          const label = (row.querySelector('.evar-label')?.value || '').toLowerCase();
+          row.style.display = (!q || name.includes(q) || label.includes(q)) ? '' : 'none';
+        });
+      });
+    }
+
     // Add variable button
-    $('#addVarBtn').onclick = () => cont.append(editVariableRow({ variable_name: 'new-variable', field_label: 'New Variable', field_type: 'text' }, cont.children.length));
+    $('#addVarBtn').onclick = () => {
+      const newRow = editVariableRow({ variable_name: 'new-variable', field_label: 'New Variable', field_type: 'text' }, cont.children.length);
+      cont.append(newRow);
+      updateRowNumbers(cont);
+      flashRow(newRow);
+    };
 
     // Save
     $('#saveTplBtn').onclick = async () => {
@@ -1207,7 +2519,8 @@ async function openEditTemplateModal(templateId) {
         if (new Set(vars.map(v => v.variable_name)).size !== vars.length) throw new Error('Duplicate variable names detected');
         if (vars.some(v => !v.field_label || !v.variable_name)) throw new Error('Variables must have names and labels');
 
-        const payload = { id: editTplCurrent.id, template_name: name, prompt_text: text, variables: vars };
+        const category = $('#editTplCategory')?.value || null;
+        const payload = { id: editTplCurrent.id, template_name: name, prompt_text: text, category, variables: vars };
         const res = await api.updateTemplate(payload);
         if (res && res.success === false) throw new Error(res.error || 'Failed to update');
 
@@ -1229,33 +2542,117 @@ async function openEditTemplateModal(templateId) {
   }
 }
 
+function updateRowNumbers(container) {
+  [...container.children].forEach((row, i) => {
+    const numEl = row.querySelector('.evar-rownum');
+    if (numEl) numEl.value = i + 1;
+  });
+}
+
 function editVariableRow(v, index) {
-  const row = h('div', { class: 'variable-row mb-2', 'data-index': index },
-    h('div', { class: 'row g-3 align-items-center' },
-      h('div', { class: 'col-md-4' },
-        h('label', { class: 'form-label fw-bold' }, 'Variable Name'),
-        h('input', { class: 'form-control cosmic-input evar-name', value: v.variable_name || '', placeholder: 'e.g., recipient' })
-      ),
-      h('div', { class: 'col-md-4' },
-        h('label', { class: 'form-label fw-bold' }, 'Field Label'),
-        h('input', { class: 'form-control cosmic-input evar-label', value: v.field_label || '', placeholder: 'Readable label' })
-      ),
-      h('div', { class: 'col-md-3' },
-        h('label', { class: 'form-label fw-bold' }, 'Input Type'),
-        (() => {
-          const select = h('select', { class: 'form-select cosmic-input evar-type' });
-          ['text', 'textarea', 'number', 'date', 'email', 'url'].forEach(t => select.append(h('option', { value: t, selected: (v.field_type === t ? true : null) }, t)));
-          return select;
-        })()
-      ),
-      h('div', { class: 'col-md-1 d-flex gap-1 justify-content-end' },
-        h('button', { type: 'button', class: 'btn btn-sm btn-outline-light cosmic-btn', 'data-ripple': '', title: 'Move up', onclick: () => moveRow(row, -1) }, h('i', { class: 'bi bi-arrow-up' })),
-        h('button', { type: 'button', class: 'btn btn-sm btn-outline-light cosmic-btn', 'data-ripple': '', title: 'Move down', onclick: () => moveRow(row, 1) }, h('i', { class: 'bi bi-arrow-down' })),
-        h('button', { type: 'button', class: 'btn btn-sm btn-outline-danger cosmic-btn', 'data-ripple': '', title: 'Remove', onclick: () => row.remove() }, h('i', { class: 'bi bi-x-lg' }))
-      )
-    )
+  const row = h('div', { class: 'variable-row mb-2 border rounded p-2', 'data-index': index });
+
+  // Row header: number + search label + move controls
+  const rowHeader = h('div', { class: 'd-flex align-items-center gap-2 mb-2' });
+
+  // Row number input (editable for direct jump)
+  const rowNumInput = h('input', {
+    type: 'number', class: 'form-control form-control-sm cosmic-input evar-rownum',
+    value: index + 1, min: '1', style: 'width:60px;text-align:center;',
+    title: 'Row number — type to jump'
+  });
+  rowNumInput.addEventListener('change', async () => {
+    const container = row.parentElement;
+    const siblings = [...container.children];
+    const currentIdx = siblings.indexOf(row);
+    const targetIdx = Math.max(0, Math.min(parseInt(rowNumInput.value) - 1, siblings.length - 1));
+    if (targetIdx === currentIdx) { rowNumInput.value = currentIdx + 1; return; }
+
+    // Prompt for move mode
+    const swapOk = await confirmDialog({
+      title: 'Move Field',
+      body: `Move "<strong>${v.variable_name}</strong>" from position ${currentIdx + 1} to ${targetIdx + 1}.<br><br>
+             <div class="d-grid gap-2 mt-2">
+               <button class="btn btn-outline-light" id="moveModeSh">Scoot all fields down 1 row</button>
+               <button class="btn btn-primary" id="moveModeSwap">Swap with field at position ${targetIdx + 1}</button>
+             </div>`,
+      okText: null, // no default ok
+      noFooter: true
+    }).catch(() => null);
+
+    // confirmDialog resolves after user clicks one of the custom buttons
+    const modeEl = document.getElementById('__moveMode');
+    const mode = modeEl ? modeEl.value : 'scoot';
+
+    if (mode === 'swap') {
+      const target = siblings[targetIdx];
+      if (target) {
+        const tempHolder = document.createElement('div');
+        container.insertBefore(tempHolder, target);
+        container.insertBefore(target, row);
+        container.insertBefore(row, tempHolder);
+        tempHolder.remove();
+      }
+    } else {
+      // Scoot: remove and re-insert at target
+      container.removeChild(row);
+      const newSiblings = [...container.children];
+      if (targetIdx >= newSiblings.length) container.appendChild(row);
+      else container.insertBefore(row, newSiblings[targetIdx]);
+    }
+    updateRowNumbers(container);
+    flashRow(row);
+  });
+
+  rowHeader.append(
+    h('span', { class: 'text-muted small fw-bold', style: 'white-space:nowrap' }, 'Row'),
+    rowNumInput,
+    h('span', { class: 'fw-semibold flex-grow-1 ms-1 text-truncate', title: v.variable_name || '' }, v.variable_name || '(new)'),
+    h('button', {
+      type: 'button', class: 'btn btn-sm btn-outline-light cosmic-btn ms-auto', title: 'Move up',
+      onclick: () => { moveRow(row, -1); flashRow(row); }
+    }, h('i', { class: 'bi bi-arrow-up' })),
+    h('button', {
+      type: 'button', class: 'btn btn-sm btn-outline-light cosmic-btn', title: 'Move down',
+      onclick: () => { moveRow(row, 1); flashRow(row); }
+    }, h('i', { class: 'bi bi-arrow-down' })),
+    h('button', {
+      type: 'button', class: 'btn btn-sm btn-outline-danger cosmic-btn', title: 'Remove',
+      onclick: () => { row.remove(); updateRowNumbers(row.parentElement); }
+    }, h('i', { class: 'bi bi-x-lg' }))
   );
+
+  row.appendChild(rowHeader);
+
+  // Field inputs
+  row.appendChild(h('div', { class: 'row g-2' },
+    h('div', { class: 'col-md-4' },
+      h('label', { class: 'form-label small fw-bold mb-1' }, 'Variable Name'),
+      h('input', { class: 'form-control form-control-sm cosmic-input evar-name', value: v.variable_name || '', placeholder: 'e.g., recipient' })
+    ),
+    h('div', { class: 'col-md-5' },
+      h('label', { class: 'form-label small fw-bold mb-1' }, 'Field Label'),
+      h('input', { class: 'form-control form-control-sm cosmic-input evar-label', value: v.field_label || '', placeholder: 'Readable label' })
+    ),
+    h('div', { class: 'col-md-3' },
+      h('label', { class: 'form-label small fw-bold mb-1' }, 'Input Type'),
+      (() => {
+        const select = h('select', { class: 'form-select form-select-sm cosmic-input evar-type' });
+        ['text', 'textarea', 'number', 'date', 'email', 'url'].forEach(t =>
+          select.append(h('option', { value: t, ...(v.field_type === t ? { selected: true } : {}) }, t))
+        );
+        return select;
+      })()
+    )
+  ));
+
   return row;
+}
+
+function flashRow(row) {
+  row.style.transition = 'background 0.1s';
+  row.style.background = 'rgba(99,102,241,0.35)';
+  setTimeout(() => { row.style.background = ''; }, 700);
 }
 
 function moveRow(row, dir) {
@@ -1264,11 +2661,9 @@ function moveRow(row, dir) {
   const idx = siblings.indexOf(row);
   const newIdx = idx + dir;
   if (newIdx < 0 || newIdx >= siblings.length) return;
-  if (dir < 0) {
-    container.insertBefore(row, siblings[newIdx]);
-  } else {
-    container.insertBefore(row, siblings[newIdx].nextSibling);
-  }
+  if (dir < 0) { container.insertBefore(row, siblings[newIdx]); }
+  else { container.insertBefore(row, siblings[newIdx].nextSibling); }
+  updateRowNumbers(container);
 }
 
 // --- Users Management (Admin Only) ---
@@ -1830,19 +3225,31 @@ function initAuthHandlers() {
 
 // --- Boot ---
 (async function boot() {
-  initThemeSwitcher();
-  initFallingStars();
-  initRipple();
-  initAuthHandlers();
+  try {
+    initThemeSwitcher();
+  } catch (e) { console.warn('Theme init error:', e); }
+
+  try {
+    initFallingStars();
+    initRipple();
+  } catch (e) { console.warn('UI effects init error:', e); }
+
+  try {
+    initAuthHandlers();
+  } catch (e) { console.warn('Auth handlers init error:', e); }
 
   // Check if already authenticated
-  const user = await checkAuth();
-  if (user) {
-    showApp(user);
-    try { await loadTemplates(); } catch (e) { console.warn('Initial template load failed:', e); }
-    setActiveNav();
-    router();
-  } else {
-    showLogin();
+  try {
+    const user = await checkAuth();
+    if (user) {
+      showApp(user);
+      try { await loadTemplates(); } catch (e) { console.warn('Initial template load failed:', e); }
+      setActiveNav();
+      router();
+    }
+    // If not authenticated, login overlay is already visible (default state)
+  } catch (e) {
+    console.warn('Boot auth check error:', e);
+    // Login overlay stays visible by default
   }
 })();

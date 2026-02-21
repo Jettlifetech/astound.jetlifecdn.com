@@ -21,7 +21,7 @@
 
 <body>
   <!-- Login overlay -->
-  <div id="loginOverlay" class="login-overlay cosmic-bg" style="display:none;">
+  <div id="loginOverlay" class="login-overlay cosmic-bg">
     <div class="login-card glass">
       <div class="text-center mb-4">
         <span class="logo-planet d-inline-block mb-3" aria-hidden="true"></span>
@@ -56,6 +56,8 @@
       <nav class="nav flex-column p-2">
         <a class="nav-link" href="#/generate"><i class="bi bi-magic me-2"></i><span>Generate</span></a>
         <a class="nav-link" href="#/templates"><i class="bi bi-list-ul me-2"></i><span>Templates</span></a>
+        <a class="nav-link" href="#/profiles"><i class="bi bi-person-lines-fill me-2"></i><span>Data Profiles</span></a>
+        <a class="nav-link" href="#/schema"><i class="bi bi-braces me-2"></i><span>Schema Generator</span></a>
         <a class="nav-link" href="#/history"><i class="bi bi-clock-history me-2"></i><span>History</span></a>
         <a class="nav-link" href="#/settings"><i class="bi bi-gear me-2"></i><span>Settings</span></a>
         <a class="nav-link" href="#/users" id="navUsers" style="display:none;"><i
@@ -136,6 +138,17 @@
                 <label class="form-label fw-bold">Template Name</label>
                 <input type="text" class="form-control cosmic-input" id="editTplName" required>
               </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold">Category</label>
+                <select class="form-select cosmic-input" id="editTplCategory">
+                  <option value="">— No category —</option>
+                  <option value="Content">Content</option>
+                  <option value="Schema">Schema</option>
+                  <option value="QA">QA</option>
+                  <option value="Coding">Coding</option>
+                  <option value="Rich Media">Rich Media</option>
+                </select>
+              </div>
               <div class="col-12">
                 <label class="form-label fw-bold">Prompt Text</label>
                 <textarea class="form-control cosmic-input" id="editTplText" rows="8" required></textarea>
@@ -147,9 +160,11 @@
             <hr class="my-4">
             <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
               <h6 class="mb-0"><i class="bi bi-sliders me-2"></i>Variables</h6>
-              <div class="d-flex gap-2">
-                <button class="btn btn-outline-light btn-sm cosmic-btn" type="button" id="addVarBtn" data-ripple><i
-                    class="bi bi-plus-circle me-1"></i>Add Variable</button>
+              <div class="d-flex gap-2 flex-wrap align-items-center">
+                <input type="search" class="form-control form-control-sm cosmic-input" id="editVarSearch"
+                  placeholder="&#128269; Search variables…" style="width:200px">
+                <button class="btn btn-outline-light btn-sm cosmic-btn" type="button" id="addVarBtn" data-ripple>
+                  <i class="bi bi-plus-circle me-1"></i>Add Variable</button>
                 <button class="btn btn-outline-warning btn-sm cosmic-btn" type="button" id="reparseBtn" data-ripple
                   title="Re-parse variables from prompt text"><i class="bi bi-magic"></i> Re-parse</button>
               </div>
@@ -167,7 +182,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="./app.js?v=20260218"></script>
+  <script src="./app.js?v=20260221b"></script>
 </body>
 
 </html>

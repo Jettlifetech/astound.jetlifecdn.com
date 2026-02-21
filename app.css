@@ -1284,3 +1284,32 @@ pre.pretty {
     padding: 0.5rem 0.6rem;
   }
 }
+/* ── Schema Generator ──────────────────────────────────────────── */
+.schema-output-box {
+  min-height: 200px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.schema-pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: #a8ffb2;
+}
+
+/* URL import status flash */
+#crawlStatus {
+  transition: all 0.3s ease;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+/* Mode toggle btn-group polish */
+#modeImport:checked + label,
+#modePaste:checked + label {
+  z-index: 1;
+}
