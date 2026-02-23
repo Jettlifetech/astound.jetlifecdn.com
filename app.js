@@ -63,13 +63,22 @@ function confirmDialog({ title = 'Confirm', body = 'Are you sure?', okText = 'OK
     const okBtn = $('#confirmOkBtn');
     okBtn.textContent = okText;
     okBtn.className = 'btn ' + okClass;
-    const modal = new bootstrap.Modal($('#confirmModal'));
-    const handler = () => { cleanup(); resolve(true); };
+    const modal = bootstrap.Modal.getOrCreateInstance($('#confirmModal'));
+    const handler = () => { cleanup(); modal.hide(); resolve(true); };
+    // Safety: remove any stale backdrops left by previous modal instances
+    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
     const cleanup = () => {
       okBtn.removeEventListener('click', handler);
       $('#confirmModal').removeEventListener('hidden.bs.modal', cancelHandler);
     };
-    const cancelHandler = () => { cleanup(); resolve(false); };
+    const cancelHandler = () => {
+      cleanup();
+      document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+      document.body.classList.remove('modal-open');
+      document.body.style.removeProperty('overflow');
+      document.body.style.removeProperty('padding-right');
+      resolve(false);
+    };
     okBtn.addEventListener('click', handler, { once: true });
     $('#confirmModal').addEventListener('hidden.bs.modal', cancelHandler, { once: true });
     modal.show();
@@ -1602,13 +1611,16 @@ async function renderSchemaGen() {
   // ── Load saved prompt templates ──────────────────────────────────────────
   const defaultMarkdownTpl = 'Analyze the following webpage content and generate comprehensive, advanced JSON-LD structured data (Schema.org markup). Include all relevant schema types, properties, and nested entities. Output ONLY valid JSON-LD wrapped in <script type="application/ld+json"> tags.\n\nWebpage Content:\n[PAGE_MARKDOWN]';
   const defaultUrlTpl = 'Analyze the following webpage URL and generate comprehensive, advanced JSON-LD structured data (Schema.org markup) for it. Include all relevant schema types, properties, and nested entities. Output ONLY valid JSON-LD wrapped in <script type="application/ld+json"> tags.\n\nPage URL: [PAGE_URL]';
+  const defaultIdentifyTpl = 'You will be given a URL. Crawl the page and identify ALL applicable Schema.org types and Google Rich Results types that should be implemented on this page. Do NOT write any schema markup code.\n\nFor each applicable type, provide:\n1. The Schema.org type name (e.g. Article, FAQPage, LocalBusiness, Product, BreadcrumbList, etc.)\n2. A brief one-line reason why it applies to this page content\n\nFormat your response as a simple numbered list. Be thorough and include every relevant type.\n\nPage URL: [PAGE_URL]';
 
   let markdownTpl = defaultMarkdownTpl;
   let urlTpl = defaultUrlTpl;
+  let identifyTpl = defaultIdentifyTpl;
   try {
     const sg = await api.get('schema-settings.php');
     if (sg && sg.prompt_template) markdownTpl = sg.prompt_template;
     if (sg && sg.url_prompt_template) urlTpl = sg.url_prompt_template;
+    if (sg && sg.identify_prompt_template) identifyTpl = sg.identify_prompt_template;
   } catch { }
 
   // ── Header ────────────────────────────────────────────────────────────────
@@ -1745,7 +1757,28 @@ async function renderSchemaGen() {
   const genSchemaBtn = h('button', { class: 'btn btn-success cosmic-btn btn-lg', id: 'genSchemaBtn' },
     h('i', { class: 'bi bi-stars me-2' }), 'Generate Advanced Schema'
   );
-  mainBody.appendChild(genSchemaBtn);
+  const identifyBtn = h('button', {
+    class: 'btn btn-lg', id: 'identifySchemaBtn',
+    style: 'background:#444;color:#fff;border:1px solid #555;display:none;'
+  },
+    h('i', { class: 'bi bi-search me-2' }), 'Identify applicable Schema Types'
+  );
+  const btnRow = h('div', { class: 'd-flex gap-3 flex-wrap align-items-center' });
+  btnRow.append(genSchemaBtn, identifyBtn);
+  mainBody.appendChild(btnRow);
+  // ── Identify Progress Section (inside main card) ──────────────────────
+  const idProgressWrap = h('div', { id: 'identifyProgressWrap', style: 'display:none', class: 'mt-4' });
+  const idProgressBar = h('div', {
+    class: 'progress-bar progress-bar-striped progress-bar-animated',
+    role: 'progressbar', style: 'width:0%;background:#444'
+  });
+  const idProgressBarOuter = h('div', { class: 'progress mb-2', style: 'height:10px' });
+  idProgressBarOuter.appendChild(idProgressBar);
+  const idProgressMsg = h('div', { class: 'text-muted small', id: 'identifyProgressMsg' });
+  const idDownloadWrap = h('div', { id: 'identifyDownloadWrap', style: 'display:none', class: 'mt-3' });
+  idProgressWrap.append(idProgressBarOuter, idProgressMsg, idDownloadWrap);
+  mainBody.appendChild(idProgressWrap);
+
   mainCard.appendChild(mainBody);
   root.appendChild(mainCard);
 
@@ -1801,14 +1834,25 @@ async function renderSchemaGen() {
       keyBadge.textContent = '\u2713 API Key Set';
       keyBadge.className = 'badge bg-success fs-6';
       genSchemaBtn.disabled = false;
+      identifyBtn.disabled = false;
     } else {
       keyBadge.innerHTML = '\u26A0 No API key \u2014 <a href="#/settings" class="text-white text-decoration-underline">add in Settings \u2192 API Keys</a>';
       keyBadge.className = 'badge bg-warning text-dark fs-6';
       genSchemaBtn.disabled = true;
+      identifyBtn.disabled = true;
     }
   }
   updateKeyBadge();
   providerSel.addEventListener('change', updateKeyBadge);
+
+  // ── Show / hide Identify button based on active tab ────────────────────
+  function updateIdentifyBtnVisibility() {
+    identifyBtn.style.display = getActiveTab() === 'urls' ? '' : 'none';
+  }
+  updateIdentifyBtnVisibility();
+  tabNav.querySelectorAll('button[data-bs-toggle="tab"]').forEach(tab => {
+    tab.addEventListener('shown.bs.tab', updateIdentifyBtnVisibility);
+  });
 
   // ── SSE streaming helper ──────────────────────────────────────────────────
   // Streams SSE response into targetEl.textContent, returns full text string.
@@ -2015,6 +2059,155 @@ async function renderSchemaGen() {
     if (!text) { toast('Nothing to copy yet', 'warning'); return; }
     try { await navigator.clipboard.writeText(text); toast('Schema copied to clipboard!', 'success'); }
     catch { toast('Copy failed \u2014 try selecting text manually', 'danger'); }
+  });
+
+  // ── Identify applicable Schema Types ────────────────────────────────────
+  identifyBtn.addEventListener('click', async () => {
+    const provider = providerSel.value;
+    const apiKey = localStorage.getItem('prompt-db-' + provider + '-key') || '';
+    if (!apiKey) { toast('No API key set for ' + provider + '. Go to Settings \u2192 API Keys.', 'warning'); return; }
+
+    // Gather URLs from the active tab — support both urls tab and import/paste single URL
+    let urls = [];
+    const mode = getActiveTab();
+    if (mode === 'urls') {
+      const rawUrls = urlListArea.value.trim();
+      if (!rawUrls) { toast('Paste at least one URL to process.', 'warning'); return; }
+      urls = rawUrls.split('\n').map(u => u.trim()).filter(u => u.startsWith('http'));
+    } else if (mode === 'import') {
+      const u = urlInput.value.trim();
+      if (!u) { toast('Enter a URL first.', 'warning'); return; }
+      urls = [u];
+    }
+    if (!urls.length) { toast('No valid URLs found.', 'warning'); return; }
+
+    // UI — disable buttons, show progress
+    identifyBtn.disabled = true;
+    genSchemaBtn.disabled = true;
+    identifyBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Identifying\u2026';
+    idProgressWrap.style.display = '';
+    idDownloadWrap.style.display = 'none';
+    idDownloadWrap.innerHTML = '';
+    idProgressBar.style.width = '0%';
+    idProgressBar.classList.add('progress-bar-animated');
+    idProgressMsg.textContent = 'Starting\u2026';
+
+    const csvRows = [['URL', 'Applicable Schema Types', 'Details']];
+
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      const pct = Math.round(((i) / urls.length) * 100);
+      idProgressBar.style.width = pct + '%';
+
+      // Step 1: Crawl
+      idProgressMsg.textContent = '(' + (i + 1) + '/' + urls.length + ') Crawling: ' + url + '\u2026';
+      let crawlOk = false;
+      try {
+        const crawlRes = await api.post('crawl.php', { url });
+        if (crawlRes.error) throw new Error(crawlRes.error);
+        crawlOk = true;
+      } catch (err) {
+        // Crawl failed — note it, continue
+        csvRows.push([url, 'CRAWL ERROR', err.message]);
+        continue;
+      }
+
+      // Step 2: Send to AI to identify schema types
+      idProgressMsg.textContent = '(' + (i + 1) + '/' + urls.length + ') Identifying schema types for: ' + url + '\u2026';
+      const prompt = identifyTpl.replace('[PAGE_URL]', url);
+      try {
+        const response = await fetch(API_BASE + 'ai-chat.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, provider, api_key: apiKey })
+        });
+        if (!response.ok) {
+          const errJson = await response.json().catch(() => ({}));
+          throw new Error(errJson.error || 'HTTP ' + response.status);
+        }
+        // Stream full response
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '', fullText = '';
+        readLoop: while (true) {
+          let chunk;
+          try { chunk = await reader.read(); } catch { break; }
+          if (chunk.done) break;
+          buf += decoder.decode(chunk.value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            const t = line.trim();
+            if (!t.startsWith('data:')) continue;
+            const payload = t.slice(5).trim();
+            if (payload === '[DONE]') break readLoop;
+            let obj;
+            try { obj = JSON.parse(payload); } catch { continue; }
+            if (obj.error) throw new Error(obj.error);
+            if (typeof obj.text === 'string' && obj.text) fullText += obj.text;
+          }
+        }
+        // Parse AI response — extract schema type names
+        const typeNames = [];
+        const details = [];
+        for (const line of fullText.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          // Match lines like "1. Article — ..." or "- FAQPage: ..."
+          const m = trimmed.match(/^(?:\d+[.)\s]+|[-*]\s+)\**([A-Z][A-Za-z]+(?:\/[A-Za-z]+)*)\**[:\s\u2014\u2013-]*(.*)/i);
+          if (m) {
+            typeNames.push(m[1].trim());
+            details.push(m[2] ? m[2].trim().replace(/^\*+|\*+$/g, '') : '');
+          }
+        }
+        const typesStr = typeNames.length ? typeNames.join(', ') : fullText.substring(0, 300);
+        const detailsStr = details.length ? details.join(' | ') : '';
+        csvRows.push([url, typesStr, detailsStr]);
+      } catch (err) {
+        csvRows.push([url, 'AI ERROR', err.message]);
+        toast('Error on ' + url + ': ' + err.message, 'danger');
+      }
+    }
+
+    // Step 3: Generate CSV
+    idProgressBar.style.width = '95%';
+    idProgressMsg.textContent = 'Writing CSV report\u2026';
+
+    const csvContent = csvRows.map(row =>
+      row.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(',')
+    ).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const csvUrl = URL.createObjectURL(blob);
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = 'schema-types-report-' + timestamp + '.csv';
+
+    // Auto-download
+    const autoLink = document.createElement('a');
+    autoLink.href = csvUrl;
+    autoLink.download = filename;
+    autoLink.style.display = 'none';
+    document.body.appendChild(autoLink);
+    autoLink.click();
+    document.body.removeChild(autoLink);
+
+    // Show Download Report button
+    idProgressBar.style.width = '100%';
+    idProgressBar.classList.remove('progress-bar-animated');
+    idProgressMsg.textContent = '\u2713 Report complete \u2014 ' + (csvRows.length - 1) + ' URL' + (csvRows.length - 1 !== 1 ? 's' : '') + ' analyzed';
+    idDownloadWrap.style.display = '';
+    const dlBtn = h('a', {
+      href: csvUrl, download: filename,
+      class: 'btn btn-success cosmic-btn'
+    }, h('i', { class: 'bi bi-download me-2' }), 'Download Report');
+    idDownloadWrap.innerHTML = '';
+    idDownloadWrap.appendChild(dlBtn);
+
+    // Restore buttons
+    identifyBtn.disabled = false;
+    genSchemaBtn.disabled = false;
+    updateKeyBadge();
+    identifyBtn.innerHTML = '<i class="bi bi-search me-2"></i>Identify applicable Schema Types';
+    toast('Done! CSV report downloaded with ' + (csvRows.length - 1) + ' URL' + (csvRows.length - 1 !== 1 ? 's' : ''), 'success');
   });
 
   // ── Validate with Google Rich Results ────────────────────────────────────
@@ -2233,9 +2426,27 @@ function renderSettings() {
               placeholder: 'Analyze the following webpage URL and generate JSON-LD...\n\nPage URL: [PAGE_URL]'
             })
           ),
+          // Template 3: Identify applicable schema types
+          h('div', { class: 'mb-4' },
+            h('label', { class: 'form-label fw-bold' },
+              h('i', { class: 'bi bi-search me-1' }),
+              ' Template 3 — Identify applicable Schema Types'
+            ),
+            h('div', { class: 'alert alert-secondary py-2 px-3 mb-2 small' },
+              h('i', { class: 'bi bi-info-circle me-1' }),
+              'Used when clicking "Identify applicable Schema Types" on the List of URLs tab. Must include ',
+              h('code', {}, '[PAGE_URL]'), ' where the URL is injected. The AI will identify applicable schema types without writing markup.'
+            ),
+            h('textarea', {
+              class: 'form-control cosmic-input font-monospace',
+              id: 'sgIdentifyPromptTemplate',
+              rows: '10',
+              placeholder: 'Identify ALL applicable Schema.org types...\n\nPage URL: [PAGE_URL]'
+            })
+          ),
           h('div', { class: 'd-flex justify-content-end' },
             h('button', { class: 'btn btn-success cosmic-btn', id: 'sgSaveBtn' },
-              h('i', { class: 'bi bi-save me-1' }), 'Save Both Templates'
+              h('i', { class: 'bi bi-save me-1' }), 'Save All Templates'
             )
           )
         )
@@ -2259,6 +2470,10 @@ function renderSettings() {
           const el = $('#sgUrlPromptTemplate');
           if (el) el.value = sg.url_prompt_template;
         }
+        if (sg.identify_prompt_template) {
+          const el = $('#sgIdentifyPromptTemplate');
+          if (el) el.value = sg.identify_prompt_template;
+        }
       }
     } catch { }
 
@@ -2281,15 +2496,21 @@ function renderSettings() {
       if (!urlPromptTemplate.includes('[PAGE_URL]')) {
         toast('Template 2 must include [PAGE_URL]', 'warning'); return;
       }
+      const identifyPromptTemplate = $('#sgIdentifyPromptTemplate')?.value?.trim() || '';
+      if (!identifyPromptTemplate) { toast('Template 3 (Identify) cannot be empty', 'warning'); return; }
+      if (!identifyPromptTemplate.includes('[PAGE_URL]')) {
+        toast('Template 3 must include [PAGE_URL]', 'warning'); return;
+      }
 
       try {
         const res = await api.post('schema-settings.php', {
           provider: 'global',
           prompt_template: promptTemplate,
-          url_prompt_template: urlPromptTemplate
+          url_prompt_template: urlPromptTemplate,
+          identify_prompt_template: identifyPromptTemplate
         });
         if (res.success) {
-          toast('Both prompt templates saved!', 'success');
+          toast('All prompt templates saved!', 'success');
         } else {
           throw new Error(res.error || 'Save failed');
         }

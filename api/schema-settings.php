@@ -25,6 +25,7 @@ $defaults = [
     'provider'             => '',
     'prompt_template'      => "Analyze the following webpage content and generate comprehensive, advanced JSON-LD structured data (Schema.org markup). Include all relevant schema types, properties, and nested entities. Include FAQ schema if applicable. Output ONLY valid JSON-LD wrapped in <script type=\"application/ld+json\"> tags.\n\nWebpage Content:\n[PAGE_MARKDOWN]",
     'url_prompt_template'  => "You will be given a URL. Crawl the page and generate comprehensive, advanced JSON-LD structured data (Schema.org markup) for the page content. Include all relevant schema types, properties, and nested entities. Include FAQ schema if applicable. Output ONLY valid JSON-LD wrapped in <script type=\"application/ld+json\"> tags.\n\nPage URL: [PAGE_URL]",
+    'identify_prompt_template' => "You will be given a URL. Crawl the page and identify ALL applicable Schema.org types and Google Rich Results types that should be implemented on this page. Do NOT write any schema markup code.\n\nFor each applicable type, provide:\n1. The Schema.org type name (e.g. Article, FAQPage, LocalBusiness, Product, BreadcrumbList, etc.)\n2. A brief one-line reason why it applies to this page content\n\nFormat your response as a simple numbered list. Be thorough and include every relevant type.\n\nPage URL: [PAGE_URL]",
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -77,6 +78,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             exit;
         }
         $existing['url_prompt_template'] = $data['url_prompt_template'];
+    }
+
+    if (isset($data['identify_prompt_template'])) {
+        if (empty($data['identify_prompt_template'])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Identify prompt template cannot be empty']);
+            exit;
+        }
+        if (strpos($data['identify_prompt_template'], '[PAGE_URL]') === false) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Identify prompt template must contain [PAGE_URL]']);
+            exit;
+        }
+        $existing['identify_prompt_template'] = $data['identify_prompt_template'];
     }
 
     if (isset($data['provider'])) {
