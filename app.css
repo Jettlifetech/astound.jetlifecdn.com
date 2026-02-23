@@ -616,6 +616,7 @@ pre.pretty {
   box-shadow: 0 4px 12px rgba(0, 0, 0, .12);
   background: var(--input-bg);
   border-color: var(--accent);
+  color: var(--text);
 }
 
 .cosmic-btn:active {

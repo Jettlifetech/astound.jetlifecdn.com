@@ -599,6 +599,42 @@ async function renderTemplates() {
     )
   );
 
+  // Group row
+  const groupColors = [
+    { name: 'Rose', value: '#e11d48' }, { name: 'Orange', value: '#ea580c' },
+    { name: 'Amber', value: '#d97706' }, { name: 'Lime', value: '#65a30d' },
+    { name: 'Emerald', value: '#059669' }, { name: 'Teal', value: '#0891b2' },
+    { name: 'Blue', value: '#2563eb' }, { name: 'Violet', value: '#7c3aed' },
+    { name: 'Pink', value: '#db2777' }, { name: 'Slate', value: '#475569' }
+  ];
+  const groupSwatches = h('div', { class: 'd-flex flex-wrap gap-1 align-items-center' });
+  groupColors.forEach((c, i) => {
+    const radio = h('input', { type: 'radio', name: 'tplGroupColor', value: c.value, class: 'visually-hidden', id: 'tplGc_' + i });
+    if (i === 6) radio.defaultChecked = true; // default: Blue
+    const swatch = h('span', {
+      title: c.name,
+      style: `display:inline-block;width:24px;height:24px;border-radius:50%;background:${c.value};` +
+        `border:${i === 6 ? '3px solid var(--accent)' : '2px solid transparent'};cursor:pointer;transition:border .15s`
+    });
+    swatch.addEventListener('click', () => {
+      radio.checked = true;
+      groupSwatches.querySelectorAll('span[title]').forEach(s => { s.style.border = '2px solid transparent'; });
+      swatch.style.border = '3px solid var(--accent)';
+    });
+    groupSwatches.appendChild(h('label', { for: 'tplGc_' + i, style: 'cursor:pointer;margin:0' }, radio, swatch));
+  });
+
+  const groupRow = h('div', { class: 'row g-3 mb-3' },
+    h('div', { class: 'col-md-6' },
+      h('label', { class: 'form-label fw-bold' }, 'Group Name ', h('span', { class: 'text-muted fw-normal' }, '(optional)')),
+      h('input', { class: 'form-control cosmic-input', id: 'tplGroupName', placeholder: 'e.g. Marketing Templates' })
+    ),
+    h('div', { class: 'col-md-6' },
+      h('label', { class: 'form-label fw-bold' }, 'Group Color'),
+      groupSwatches
+    )
+  );
+
   const textGroup = h('div', { class: 'mb-3' },
     h('label', { for: 'tplText', class: 'form-label fw-bold' }, 'Prompt Text'),
     h('textarea', {
@@ -626,7 +662,7 @@ async function renderTemplates() {
     )
   );
 
-  form.append(nameRow, textGroup, parseBtn, configSection);
+  form.append(nameRow, groupRow, textGroup, parseBtn, configSection);
   body.append(form);
   card.append(body);
   root.appendChild(card);
@@ -1129,6 +1165,9 @@ async function renderTemplates() {
     const name = $('#tplName').value.trim();
     const text = $('#tplText').value.trim();
     const category = $('#tplCategory')?.value || null;
+    const groupName = $('#tplGroupName')?.value.trim() || null;
+    const checkedColor = document.querySelector('input[name="tplGroupColor"]:checked');
+    const groupColor = groupName ? (checkedColor?.value || '#2563eb') : null;
     if (!name || !text) return toast('Please fill in all required fields', 'warning');
     try {
       const variables = extractedVariables.map((varName, i) => {
@@ -1137,7 +1176,7 @@ async function renderTemplates() {
         if (!label) throw new Error(`Please provide a label for "${varName}"`);
         return { variable_name: varName, field_label: label, field_type: type };
       });
-      const result = await api.post('templates.php', { template_name: name, prompt_text: text, category, variables });
+      const result = await api.post('templates.php', { template_name: name, prompt_text: text, category, group_name: groupName, group_color: groupColor, variables });
       if (result && result.success === false) throw new Error(result.error || 'Failed to save template');
       toast('Template created!', 'success');
       $('#tplForm').reset(); $('#varConfig').style.display = 'none'; extractedVariables = [];

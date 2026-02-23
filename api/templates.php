@@ -220,9 +220,9 @@ try {
             if (!isset($data['template_name']) || !isset($data['prompt_text'])) throw new Exception('Name and prompt text required');
 
             $conn->beginTransaction();
-            $stmt = $conn->prepare("INSERT INTO prompt_templates (user_id, template_name, prompt_text, category) VALUES (?,?,?,?)");
+            $stmt = $conn->prepare("INSERT INTO prompt_templates (user_id, template_name, prompt_text, category, group_name, group_color) VALUES (?,?,?,?,?,?)");
             $stmt->execute([$authUser['id'], $data['template_name'], $data['prompt_text'],
-                $data['category'] ?? null]);
+                $data['category'] ?? null, $data['group_name'] ?? null, $data['group_color'] ?? null]);
             $templateId = $conn->lastInsertId();
 
             if (isset($data['variables']) && is_array($data['variables'])) {
