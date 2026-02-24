@@ -18,10 +18,13 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS prompt_templates (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
-    template_name VARCHAR(255) NOT NULL UNIQUE,
+    template_name VARCHAR(255) NOT NULL,
     prompt_text TEXT NOT NULL,
+    is_public TINYINT(1) NOT NULL DEFAULT 0 COMMENT '0=private, 1=visible to all users',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_user_template (user_id, template_name),
+    KEY idx_is_public (is_public),
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 

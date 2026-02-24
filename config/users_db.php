@@ -89,7 +89,7 @@ function createUser($username, $password, $email = '', $firstName = '', $lastNam
         'last_name' => $lastName,
         'email' => $email,
         'password_hash' => password_hash($password, PASSWORD_DEFAULT),
-        'role' => in_array($role, ['admin', 'user']) ? $role : 'user',
+        'role' => in_array($role, ['admin', 'super_admin', 'user']) ? $role : 'user',
         'created_at' => date('c')
     ];
 
@@ -130,7 +130,7 @@ function updateUser($id, $updates) {
             if (isset($updates['first_name'])) $u['first_name'] = $updates['first_name'];
             if (isset($updates['last_name'])) $u['last_name'] = $updates['last_name'];
             if (isset($updates['email'])) $u['email'] = $updates['email'];
-            if (isset($updates['role'])) $u['role'] = in_array($updates['role'], ['admin', 'user']) ? $updates['role'] : $u['role'];
+            if (isset($updates['role'])) $u['role'] = in_array($updates['role'], ['admin', 'super_admin', 'user']) ? $updates['role'] : $u['role'];
 
             // Only hash password if a new one is provided
             if (!empty($updates['password'])) {
@@ -176,8 +176,8 @@ function deleteUser($id, $currentUserId) {
     }
     if (!$target) throw new Exception('User not found');
 
-    if ($target['role'] === 'admin') {
-        $adminCount = count(array_filter($db['users'], fn($u) => $u['role'] === 'admin'));
+    if ($target['role'] === 'admin' || $target['role'] === 'super_admin') {
+        $adminCount = count(array_filter($db['users'], fn($u) => $u['role'] === 'admin' || $u['role'] === 'super_admin'));
         if ($adminCount <= 1) {
             throw new Exception('Cannot delete the last admin account');
         }

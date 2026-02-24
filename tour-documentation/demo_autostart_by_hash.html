@@ -1,0 +1,85 @@
+﻿<!DOCTYPE HTML>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1024">
+<title>itour</title>
+
+<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+<!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+<!--[if lt IE 9]>
+    <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+    <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+<![endif]-->
+
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+<link rel="stylesheet" href="doc_files/css/style.css">
+<script src="https://code.jquery.com/jquery-3.1.0.min.js"></script>
+
+
+<link rel="stylesheet" href="css/itour.css">
+<script src="js/jquery.itour.js"></script>
+<script>
+$(window).on('load',function(){
+	var startTour = function(){
+		$('body').itour({
+			showAbsentElement:true,				
+			tourTitle:'Example «Auto Start»',
+			introShow:true,
+			steps:[{
+				title:'Step 1',		
+				content:'Content 1',		
+				name:'.asEl_1'
+			},{
+				title:'Step 2',		
+				content:'Content 2',		
+				name:'.asEl_2'
+			},],
+			lang:{
+				introTitle:'Welcome to Auto Start demo'
+			}
+		});	
+	}
+	
+	/*Check hash link in page URL*/
+	var detectHash = function(){
+		if(location.hash == '#itour'){
+			location.hash = '';
+			startTour();	
+		}
+	}
+	/*Add event to hyperlink with hash */
+	$(window).on('hashchange', function() {
+		detectHash();
+	});
+	detectHash();
+	
+	/*Add event to button*/
+	$('.autoStartBtn').on('click',function(){
+		startTour();
+		return false;
+	});
+});
+</script> 
+
+</head>
+<body>
+
+<div class="container">
+	<a href="documentation.html#autostart-hash">Back to the documentation</a>
+	<h1>Example Page «itour - Auto Start - #hash»</h1>
+	<p>Autostart on this page occurs after changing the hash of the link in the address bar to the value "itour"<br>
+	Click button or add the hash "#itour" in the page URL manually.</p>
+	<p>In the URL  you will not see the hash, because after the start of the tour hash removed from URL</p>
+	<p><a class="btn btn-primary" href="#itour">Change Hash</a></p>   
+	
+	<span class="asEl_1"> Element 1</span>
+	-
+	<span class="asEl_2"> Element 2</span>
+</div>	
+
+
+<link rel="stylesheet" href="doc_files/css/prism.css">
+<script src="doc_files/js/prism.js"></script>
+</body>
+</html>

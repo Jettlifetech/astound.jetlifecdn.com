@@ -1,0 +1,113 @@
+﻿<!DOCTYPE HTML>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1024">
+<title>itour</title>
+
+<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+<!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+<!--[if lt IE 9]>
+    <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+    <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+<![endif]-->
+
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+<link rel="stylesheet" href="doc_files/css/style.css">
+<script src="https://code.jquery.com/jquery-3.1.0.min.js"></script>
+<script src="doc_files/js/main.js"></script>
+
+
+
+<link rel="stylesheet" href="css/itour.css">
+<script src="js/jquery.itour.js"></script>
+
+</head>
+<body>
+
+<div class="container">
+	<h1 data-name="multipageEl_3">Multipage Demo</h1>
+	<p data-name="multipageEl_4">Attention! This intermediate page.</p>
+	<p>To see the code of this example, go to documentation page: <a href="documentation.html#multipage">Multipage</a></p>
+	<span class="triggerTest">
+		<label class="testBefore">Test Before: <input type="checkbox"></label>
+		<br>
+		<label class="testBefore">Test During: <input type="checkbox"></label>
+		<br>
+		<label class="testBefore">Test After: <input type="checkbox"></label>
+	</span>
+
+	<script>
+	$(window).on('load',function(){
+		$('.multipageBtn').on('click',function(){
+			$('body').itour({
+				showAbsentElement:true,				
+				tourTitle:'Example «multipage»',
+				introShow:true,
+				steps:[{
+					title:'Step 1',				
+					content:'Step 1 Description',	
+					name:'multipageEl_1',
+					loc:'documentation.html'
+				},{
+					title:'Step 2',
+					content:'Step 2 Description',		
+					name:'multipageEl_2',
+					loc:'documentation.html',
+					nextText:'Next Page'
+				},{
+					title:'Step 3',		
+					content:'Step 3 Description',		
+					name:'multipageEl_3',
+					loc:'demo_multipage.html',
+					prevText:'Previous Page'
+					
+				},{
+					title:'Step Trigger',		
+					content:'Step 3 Description',		
+					name:'.triggerTest',
+					loc:'demo_multipage.html',
+					prevText:'Previous Page',
+					before:function(){
+						$('.testBefore').trigger('click');	
+					},
+					during:function(){
+						$('.testDuring').trigger('click');	
+					},
+					after:function(){
+						$('.testAfter').trigger('click');	
+					}
+					
+				},{
+					title:'Step 4',				
+					content:'Step 4 Description',	
+					name:'multipageEl_4',
+					loc:'demo_multipage.html',
+					nextText:'Next Page'
+					
+				},{
+					title:'Step 5',				
+					content:'Step 5 Description',	
+					name:'multipageEl_5',
+					loc:'documentation.html'
+					
+				}],
+				lang:{
+					introTitle:'Welcome to Multipage demo',
+					introContent:'Click "Start" to begin'
+				}
+			});
+			return false;
+		});
+	})
+	</script> 
+	<p><a class="btn btn-success multipageBtn" href="#">Start Tour</a></p>              
+                
+</div>	
+	
+	
+<link rel="stylesheet" href="doc_files/css/prism.css">
+<script src="doc_files/js/prism.js"></script>
+<script src="doc_files/js/builder.js"></script>
+</body>
+</html>

@@ -48,14 +48,34 @@ function getAuthUser() {
 }
 
 /**
- * Require admin role. Returns user array or sends 403 and exits.
+ * Require admin or super_admin role. Returns user array or sends 403 and exits.
  */
 function requireAdmin() {
     $user = requireAuth();
-    if ($user['role'] !== 'admin') {
+    if ($user['role'] !== 'admin' && $user['role'] !== 'super_admin') {
         http_response_code(403);
         echo json_encode(['error' => 'Admin access required']);
         exit;
     }
     return $user;
+}
+
+/**
+ * Require super_admin role only. Returns user array or sends 403 and exits.
+ */
+function requireSuperAdmin() {
+    $user = requireAuth();
+    if ($user['role'] !== 'super_admin') {
+        http_response_code(403);
+        echo json_encode(['error' => 'Super Admin access required']);
+        exit;
+    }
+    return $user;
+}
+
+/**
+ * Check if a user array has admin privileges (admin or super_admin).
+ */
+function isAdmin($user) {
+    return in_array($user['role'], ['admin', 'super_admin']);
 }

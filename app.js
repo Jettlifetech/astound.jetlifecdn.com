@@ -37,17 +37,60 @@ const h = (tag, attrs = {}, ...children) => {
 };
 
 function toast(message, type = 'info') {
-  const container = $('#toastContainer');
-  const wrapper = h('div', { class: 'toast align-items-center text-bg-' + (type === 'info' ? 'secondary' : type), role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' });
-  wrapper.innerHTML = `<div class="d-flex">
-    <div class="toast-body">${message}</div>
-    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-  </div>`;
+  // Ensure a bottom-right toast container exists (separate from any existing BS container)
+  let container = document.getElementById('toastContainerBR');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainerBR';
+    container.style.cssText = [
+      'position:fixed', 'bottom:1.25rem', 'right:1.25rem',
+      'z-index:1090', 'display:flex', 'flex-direction:column',
+      'gap:0.5rem', 'align-items:flex-end', 'pointer-events:none'
+    ].join(';');
+    document.body.appendChild(container);
+  }
+
+  const icons = { success: '✅', danger: '❌', warning: '⚠️', info: 'ℹ️' };
+  const icon = icons[type] || 'ℹ️';
+  const bgMap = { success: '#16a34a', danger: '#dc2626', warning: '#d97706', info: '#2563eb' };
+  const bg = bgMap[type] || bgMap.info;
+
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = [
+    'pointer-events:auto', 'display:flex', 'align-items:center', 'gap:0.6rem',
+    'padding:0.75rem 1rem', 'border-radius:0.75rem',
+    `background:${bg}`, 'color:#fff', 'font-size:0.875rem',
+    'box-shadow:0 4px 20px rgba(0,0,0,0.35)', 'max-width:22rem',
+    'transform:translateX(120%)', 'transition:transform 0.3s cubic-bezier(.22,.61,.36,1)',
+    'line-height:1.4'
+  ].join(';');
+  wrapper.innerHTML = `
+    <span style="font-size:1.1rem;flex-shrink:0">${icon}</span>
+    <span style="flex:1">${message}</span>
+    <button onclick="this.closest('.prompt-toast').remove()" style="background:none;border:none;color:#fff;font-size:1.1rem;cursor:pointer;padding:0;line-height:1;opacity:0.8;flex-shrink:0" aria-label="Close">✕</button>
+  `;
+  wrapper.classList.add('prompt-toast');
+
   container.appendChild(wrapper);
-  const t = new bootstrap.Toast(wrapper, { delay: 2800 });
-  t.show();
-  wrapper.addEventListener('hidden.bs.toast', () => wrapper.remove());
+  // Slide in
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => { wrapper.style.transform = 'translateX(0)'; });
+  });
+
+  // Auto-close after 15 seconds
+  const timer = setTimeout(() => {
+    wrapper.style.transform = 'translateX(120%)';
+    wrapper.style.opacity = '0';
+    setTimeout(() => wrapper.remove(), 350);
+  }, 15000);
+
+  // Manual close button cancels timer
+  wrapper.querySelector('button').addEventListener('click', () => {
+    clearTimeout(timer);
+    wrapper.remove();
+  }, { once: true });
 }
+
 
 function confirmDialog({ title = 'Confirm', body = 'Are you sure?', okText = 'OK', okClass = 'btn-danger' }) {
   return new Promise(resolve => {
@@ -88,7 +131,7 @@ function confirmDialog({ title = 'Confirm', body = 'Are you sure?', okText = 'OK
 // --- API helpers (AJAX) ---
 const api = {
   async get(path) {
-    const res = await fetch(API_BASE + path, { headers: { 'Accept': 'application/json' } });
+    const res = await fetch(API_BASE + path, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
     if (res.status === 401) {
       console.info('Session expired or not authenticated for:', path);
       return null;
@@ -99,6 +142,7 @@ const api = {
   async post(path, data) {
     const res = await fetch(API_BASE + path, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(data)
     });
@@ -108,6 +152,7 @@ const api = {
   async put(path, data) {
     const res = await fetch(API_BASE + path, {
       method: 'PUT',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(data)
     });
@@ -117,6 +162,7 @@ const api = {
   async del(path, formEncodedBody) {
     const res = await fetch(API_BASE + path, {
       method: 'DELETE',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
       body: formEncodedBody
     });
@@ -158,13 +204,108 @@ const api = {
   async templateAction(actionData) {
     const res = await fetch(API_BASE + 'templates.php', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(actionData)
     });
+    if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
     if (!res.ok) throw new Error(`Action failed: ${res.status}`);
     return res.json();
   }
 };
+
+/**
+ * renderPromptOutput(text, containerEl)
+ * Parses a generated prompt string and renders it into containerEl.
+ * Text outside {{...}} is rendered as plain text.
+ * Text inside {{command}} is rendered as a click-to-copy terminal block.
+ */
+function renderPromptOutput(text, containerEl) {
+  // Split on {{...}} blocks (non-greedy, allows newlines inside)
+  const parts = text.split(/({{[\s\S]+?}})/g);
+  parts.forEach(part => {
+    if (part.startsWith('{{') && part.endsWith('}}')) {
+      const cmd = part.slice(2, -2); // strip {{ }}
+
+      // ── Terminal chip wrapper ──
+      const chip = document.createElement('div');
+      chip.className = 'cmd-chip';
+      chip.dataset.cmd = cmd;
+      chip.title = 'Click anywhere on this block to copy to clipboard';
+      chip.style.cssText = [
+        'display:flex', 'align-items:flex-start', 'gap:0.6rem',
+        'margin:0.5rem 0', 'padding:0.6rem 0.9rem',
+        'border-radius:0.6rem', 'cursor:pointer',
+        'border:1px solid rgba(6,182,212,0.35)',
+        'background:rgba(6,182,212,0.08)',
+        'transition:background 0.15s, border-color 0.15s',
+        'font-family:\'JetBrains Mono\',\'Fira Code\',monospace',
+        'font-size:0.85rem', 'line-height:1.5', 'color:#e0f7fa',
+        'word-break:break-all', 'position:relative'
+      ].join(';');
+
+      // Terminal icon bullet
+      const icon = document.createElement('span');
+      icon.textContent = '⌨';
+      icon.style.cssText = 'flex-shrink:0;font-size:1rem;margin-top:0.05rem;opacity:0.7;user-select:none;';
+
+      // Command text
+      const codeText = document.createElement('span');
+      codeText.style.cssText = 'flex:1;white-space:pre-wrap;';
+      codeText.textContent = cmd;
+
+      // Copy badge (top-right)
+      const badge = document.createElement('span');
+      badge.style.cssText = [
+        'flex-shrink:0', 'font-size:0.7rem', 'font-weight:600',
+        'background:rgba(6,182,212,0.2)', 'color:#38bdf8',
+        'border:1px solid rgba(6,182,212,0.3)', 'border-radius:0.3rem',
+        'padding:1px 6px', 'align-self:flex-start', 'white-space:nowrap',
+        'font-family:sans-serif', 'user-select:none'
+      ].join(';');
+      badge.textContent = '📋 Click to copy';
+
+      chip.append(icon, codeText, badge);
+
+      // Hover effect
+      chip.addEventListener('mouseenter', () => {
+        chip.style.background = 'rgba(6,182,212,0.16)';
+        chip.style.borderColor = 'rgba(6,182,212,0.6)';
+      });
+      chip.addEventListener('mouseleave', () => {
+        chip.style.background = 'rgba(6,182,212,0.08)';
+        chip.style.borderColor = 'rgba(6,182,212,0.35)';
+      });
+
+      // Click: copy just this command
+      chip.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(cmd);
+          badge.textContent = '✅ Copied!';
+          badge.style.background = 'rgba(16,185,129,0.25)';
+          badge.style.color = '#10b981';
+          badge.style.borderColor = 'rgba(16,185,129,0.4)';
+          chip.style.borderColor = 'rgba(16,185,129,0.6)';
+          setTimeout(() => {
+            badge.textContent = '📋 Click to copy';
+            badge.style.background = 'rgba(6,182,212,0.2)';
+            badge.style.color = '#38bdf8';
+            badge.style.borderColor = 'rgba(6,182,212,0.3)';
+            chip.style.borderColor = 'rgba(6,182,212,0.35)';
+          }, 2200);
+          toast('Command copied to clipboard!', 'success');
+        } catch (e) {
+          toast('Copy failed: ' + e.message, 'danger');
+        }
+      });
+
+      containerEl.appendChild(chip);
+    } else {
+      // Plain text — preserve whitespace/newlines
+      if (part) containerEl.appendChild(document.createTextNode(part));
+    }
+  });
+}
 
 // --- Router ---
 const Routes = {
@@ -176,6 +317,7 @@ const Routes = {
   '/settings': renderSettings,
   '/users': renderUsers
 };
+
 
 function setActiveNav() {
   const hash = location.hash || '#/generate';
@@ -253,7 +395,7 @@ async function renderGenerate() {
   if (profiles && profiles.length > 0) {
     const pGroup = h('div', { class: 'mb-4 p-3 rounded glass-brd bg-white bg-opacity-10' });
     const pLabel = h('label', { class: 'form-label fw-bold small text-muted text-uppercase mb-2' },
-      h('i', { class: 'bi bi-person-lines-fill me-1' }), '1. Autofill from Profile (Optional)');
+      h('i', { class: 'bi bi-person-lines-fill me-1 jlt-step1' }), '1. Autofill from Profile (Optional)');
     const pSelect = h('select', { class: 'form-select cosmic-input form-select-sm' });
     pSelect.innerHTML = '<option value="">-- No Profile Selected --</option>';
     profiles.forEach(p => pSelect.innerHTML += `<option value="${p.id}">${p.profile_name}</option>`);
@@ -308,7 +450,7 @@ async function renderGenerate() {
         )
       )
     ),
-    h('pre', { class: 'pretty mb-0', id: 'generatedOut', role: 'region', 'aria-live': 'polite' })
+    h('div', { class: 'generated-out', id: 'generatedOut', role: 'region', 'aria-live': 'polite', style: 'white-space:pre-wrap;font-family:\'JetBrains Mono\',monospace;font-size:0.88rem;line-height:1.7;' })
   );
   outCard.append(outBody);
 
@@ -401,7 +543,12 @@ async function renderGenerate() {
       const re = new RegExp(`\\[${escapeRegExp(name)}\\]`, 'g');
       prompt = prompt.replace(re, variableData[name]);
     });
-    $('#generatedOut').textContent = prompt;
+
+    // Render output: parse {{terminal blocks}} into click-to-copy chips
+    const outEl = $('#generatedOut');
+    outEl.innerHTML = '';
+    renderPromptOutput(prompt, outEl);
+
     $('#outputCard').style.display = '';
     try {
       await api.post('history.php', {
@@ -411,14 +558,17 @@ async function renderGenerate() {
       const now = new Date().toISOString();
       const optimistic = { type: 'prompt', template_id: t.id, template_name: t.template_name, generated_prompt: prompt, variable_data: variableData, created_at: now };
       Store.set({ history: [optimistic, ...Store.state.history] });
-      // Silently increment use_count in the background
       api.templateAction({ action: 'increment_use', id: t.id }).catch(() => { });
     } catch (e) { console.warn('Failed to save to history:', e); }
     toast('Prompt generated!', 'success');
   });
 
   $('#copyBtn').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText($('#generatedOut').textContent); toast('Copied to clipboard', 'success'); }
+    // Copy only the plain-text content (strip click-to-copy UI chrome)
+    const text = Array.from($('#generatedOut').childNodes)
+      .map(n => n.nodeType === 3 ? n.textContent : (n.dataset && n.dataset.cmd ? n.dataset.cmd : n.textContent))
+      .join('');
+    try { await navigator.clipboard.writeText(text); toast('Copied to clipboard', 'success'); }
     catch (e) { toast('Copy failed: ' + e.message, 'danger'); }
   });
 
@@ -644,14 +794,100 @@ async function renderTemplates() {
     )
   );
 
+  // ── Prompt Text Group with toolbar ───────────────────────────────────────
+  const tplTextarea = h('textarea', {
+    id: 'tplText', class: 'form-control cosmic-input font-monospace', rows: '10', required: true,
+    placeholder: 'Write your prompt using [variable-names] for dynamic fields…\n\nFor click-to-copy terminal commands, wrap them like:\n{{CREATE DATABASE [databaseName];}}'
+  });
+
+  // "Wrap as Terminal Command" toolbar button
+  const wrapCmdBtn = h('button', {
+    type: 'button',
+    class: 'btn btn-sm cosmic-btn',
+    style: 'background:rgba(6,182,212,0.15);border:1px solid rgba(6,182,212,0.4);color:#38bdf8;',
+    title: 'Select text in the prompt, then click to wrap it as a click-to-copy terminal command block'
+  },
+    h('i', { class: 'bi bi-terminal me-1' }), 'Wrap as Terminal Command'
+  );
+
+  wrapCmdBtn.addEventListener('click', () => {
+    const ta = tplTextarea;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const sel = ta.value.substring(start, end).trim();
+    if (!sel) {
+      toast('Select text in the prompt first, then click "Wrap as Terminal Command"', 'warning');
+      return;
+    }
+    // If already wrapped, unwrap
+    if (sel.startsWith('{{') && sel.endsWith('}}')) {
+      const inner = sel.slice(2, -2);
+      ta.setRangeText(inner, start, end, 'select');
+      toast('Removed terminal command wrapper', 'info');
+    } else {
+      ta.setRangeText('{{' + sel + '}}', start, end, 'select');
+      toast('Text wrapped as terminal command — variables inside still work!', 'success');
+    }
+    ta.focus();
+    ta.dispatchEvent(new Event('input'));
+  });
+
   const textGroup = h('div', { class: 'mb-3' },
     h('label', { for: 'tplText', class: 'form-label fw-bold' }, 'Prompt Text'),
-    h('textarea', {
-      id: 'tplText', class: 'form-control cosmic-input', rows: '8', required: true,
-      placeholder: 'Write your prompt using [variable-names]…'
-    }),
-    h('div', { class: 'form-text' }, h('i', { class: 'bi bi-info-circle me-1 text-white' }), 'Use [variable-name] format for variables.')
+    // Toolbar above textarea
+    h('div', {
+      class: 'd-flex align-items-center gap-2 mb-1 p-2 rounded',
+      style: 'background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.07);'
+    },
+      h('span', { class: 'small text-muted me-1' }, h('i', { class: 'bi bi-tools me-1' }), 'Toolbar:'),
+      wrapCmdBtn,
+      h('span', { class: 'small text-muted ms-2' },
+        'Select text → click to wrap in ',
+        h('code', { style: 'background:rgba(6,182,212,0.15);color:#38bdf8;padding:1px 5px;border-radius:3px;' }, '{{…}}'))
+    ),
+    tplTextarea,
+    // Syntax guide
+    h('div', { class: 'mt-2 p-3 rounded', style: 'background:rgba(6,182,212,0.06);border:1px solid rgba(6,182,212,0.2);' },
+      h('div', { class: 'fw-bold small mb-2', style: 'color:#38bdf8;' }, h('i', { class: 'bi bi-info-circle me-1' }), 'Syntax Guide'),
+      h('div', { class: 'small', style: 'display:grid;gap:0.4rem;' },
+        h('div', {},
+          h('code', { style: 'background:rgba(124,58,237,0.2);color:#a78bfa;padding:1px 5px;border-radius:3px;' }, '[variable]'),
+          h('span', { class: 'text-muted ms-2' }, '— Dynamic field (replaced when user clicks Generate)')
+        ),
+        h('div', {},
+          h('code', { style: 'background:rgba(6,182,212,0.2);color:#38bdf8;padding:1px 5px;border-radius:3px;' }, '{{terminal command here}}'),
+          h('span', { class: 'text-muted ms-2' }, '— Click-to-copy terminal block in the output')
+        ),
+        h('div', {},
+          h('code', { style: 'background:rgba(6,182,212,0.2);color:#38bdf8;padding:1px 5px;border-radius:3px;' }, '{{CREATE DATABASE [databaseName];}}'),
+          h('span', { class: 'text-muted ms-2' }, '— Variables work inside terminal blocks too')
+        )
+      )
+    )
   );
+
+  // Privacy toggle row
+  const privacyRow = h('div', { class: 'mb-3' },
+    h('label', { class: 'form-label fw-bold mb-2' }, h('i', { class: 'bi bi-shield-lock me-1' }), 'Visibility'),
+    h('div', { class: 'd-flex align-items-center gap-3 p-3 rounded glass-brd' },
+      h('div', { class: 'form-check form-switch mb-0' },
+        h('input', { class: 'form-check-input', type: 'checkbox', role: 'switch', id: 'tplIsPublic', style: 'width:2.5em;height:1.3em;' }),
+        h('label', { class: 'form-check-label fw-semibold ms-2', for: 'tplIsPublic' }, 'Public Prompt')
+      ),
+      h('span', { class: 'text-muted small', id: 'tplVisibilityHint' }, '🔒 Private — only visible to you')
+    )
+  );
+  // Update hint text when toggle changes
+  (() => {
+    const toggle = privacyRow.querySelector('#tplIsPublic');
+    const hint = privacyRow.querySelector('#tplVisibilityHint');
+    toggle.addEventListener('change', () => {
+      hint.textContent = toggle.checked
+        ? '🌐 Public — visible and usable by all users'
+        : '🔒 Private — only visible to you';
+    });
+  })();
+
   const parseBtn = h('button', { type: 'button', class: 'btn btn-info cosmic-btn', id: 'parseBtn', 'data-ripple': '' },
     h('i', { class: 'bi bi-search me-1' }), 'Parse variables'
   );
@@ -671,7 +907,7 @@ async function renderTemplates() {
     )
   );
 
-  form.append(nameRow, groupRow, textGroup, parseBtn, configSection);
+  form.append(nameRow, groupRow, textGroup, privacyRow, parseBtn, configSection);
   body.append(form);
   card.append(body);
   root.appendChild(card);
@@ -744,6 +980,7 @@ async function renderTemplates() {
     { key: 'category', label: 'Category' },
     { key: 'group_name', label: 'Group' },
     { key: 'use_count', label: 'Uses' },
+    { key: 'is_public', label: 'Visibility', nosort: true },
     { key: 'created_at', label: 'Created' },
     { key: 'actions', label: '', nosort: true, width: '120px' },
   ];
@@ -819,7 +1056,7 @@ async function renderTemplates() {
 
     tbody.innerHTML = '';
     if (!items.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No templates found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No templates found.</td></tr>';
       return;
     }
 
@@ -845,19 +1082,162 @@ async function renderTemplates() {
       nameCell.appendChild(document.createTextNode(t.template_name));
       tr.appendChild(nameCell);
 
-      // Category badge
-      // Category badge — colored per category
+      // ── Category cell — click to change / clear ─────────────────────────
       const cs = getCatStyle(t.category);
       const catBadge = t.category
-        ? h('span', { class: 'badge', style: `background:${cs.bg};color:${cs.text}` }, cs.emoji + '\u00A0' + t.category)
-        : h('span', { class: 'text-muted small' }, '\u2014');
-      tr.appendChild(h('td', {}, catBadge));
+        ? h('span', { class: 'badge', style: `background:${cs.bg};color:${cs.text};cursor:pointer;` }, cs.emoji + '\u00A0' + t.category)
+        : h('span', { class: 'text-muted small', style: 'cursor:pointer;text-decoration:underline dotted;' }, '＋ set category');
+      const catCell = h('td', { title: 'Click to change category', style: 'position:relative;' }, catBadge);
+      catCell.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Remove any open pickers
+        document.querySelectorAll('.inline-cat-picker, .inline-grp-picker').forEach(el => el.remove());
+        const picker = document.createElement('div');
+        picker.className = 'inline-cat-picker';
+        picker.style.cssText = 'position:absolute;z-index:9999;left:0;top:100%;min-width:170px;' +
+          'background:#1e2235;border:1px solid rgba(255,255,255,0.15);border-radius:.5rem;padding:.4rem;box-shadow:0 8px 32px rgba(0,0,0,.5);';
+        const allCats = [
+          { v: '', l: '✕ Clear category' },
+          { v: 'Content', l: '📝 Content' },
+          { v: 'Schema', l: '📊 Schema' },
+          { v: 'QA', l: '✔ QA' },
+          { v: 'Coding', l: '💻 Coding' },
+          { v: 'Rich Media', l: '🎞 Rich Media' },
+          // Add custom categories
+          ...[...new Set(Store.state.templates.map(x => x.category).filter(c => c && !['Content','Schema','QA','Coding','Rich Media'].includes(c)))]
+            .sort().map(c => ({ v: c, l: c }))
+        ];
+        allCats.forEach(({ v, l }) => {
+          const item = document.createElement('div');
+          item.textContent = l;
+          item.style.cssText = 'padding:.35rem .65rem;cursor:pointer;border-radius:.3rem;font-size:.84rem;' +
+            (t.category === v ? 'font-weight:bold;background:rgba(255,255,255,0.08);' : '');
+          item.addEventListener('mouseenter', () => item.style.background = 'rgba(255,255,255,0.1)');
+          item.addEventListener('mouseleave', () => item.style.background = t.category === v ? 'rgba(255,255,255,0.08)' : '');
+          item.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            picker.remove();
+            if (v === (t.category || '')) return; // No change
+            try {
+              await api.templateAction({
+                action: 'bulk_category',
+                ids: [t.id],
+                category: v || null
+              });
+              t.category = v || null; // update local state
+              const tpl = Store.state.templates.find(x => x.id === t.id);
+              if (tpl) tpl.category = v || null;
+              toast(v ? `Category set to "${v}"` : 'Category cleared', 'success');
+              renderTemplateList();
+            } catch (err) { toast('Update failed: ' + err.message, 'danger'); }
+          });
+          picker.appendChild(item);
+        });
+        catCell.appendChild(picker);
+        const closePicker = (ev) => { if (!catCell.contains(ev.target)) { picker.remove(); document.removeEventListener('click', closePicker); } };
+        setTimeout(() => document.addEventListener('click', closePicker), 0);
+      });
+      tr.appendChild(catCell);
 
-      // Group
+      // ── Group cell — click to change / clear ────────────────────────────
       const grpEl = t.group_name
-        ? h('span', { class: 'badge', style: `background:${t.group_color || '#6c757d'};color:#fff` }, t.group_name)
-        : h('span', { class: 'text-muted small' }, '—');
-      tr.appendChild(h('td', {}, grpEl));
+        ? h('span', { class: 'badge', style: `background:${t.group_color || '#6c757d'};color:#fff;cursor:pointer;`, title: 'Click to change group' }, t.group_name)
+        : h('span', { class: 'text-muted small', style: 'cursor:pointer;text-decoration:underline dotted;' }, '＋ set group');
+      const grpCell = h('td', { title: 'Click to change group', style: 'position:relative;' }, grpEl);
+      grpCell.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.inline-cat-picker, .inline-grp-picker').forEach(el => el.remove());
+
+        const existingGroups = [...new Set(Store.state.templates.map(x => x.group_name).filter(Boolean))].sort();
+        const colorList = [
+          '#e11d48','#ea580c','#d97706','#65a30d','#059669','#0891b2','#2563eb','#7c3aed','#db2777','#475569'
+        ];
+        let pendingColor = t.group_color || '#2563eb';
+
+        const picker = document.createElement('div');
+        picker.className = 'inline-grp-picker';
+        picker.style.cssText = 'position:absolute;z-index:9999;left:0;top:100%;min-width:230px;' +
+          'background:#1e2235;border:1px solid rgba(255,255,255,0.15);border-radius:.5rem;padding:.6rem;box-shadow:0 8px 32px rgba(0,0,0,.5);';
+
+        // Clear option
+        const clearItem = document.createElement('div');
+        clearItem.textContent = '✕ Clear group';
+        clearItem.style.cssText = 'padding:.35rem .65rem;cursor:pointer;border-radius:.3rem;font-size:.84rem;color:#f87171;margin-bottom:.3rem;';
+        clearItem.addEventListener('mouseenter', () => clearItem.style.background = 'rgba(255,100,100,0.1)');
+        clearItem.addEventListener('mouseleave', () => clearItem.style.background = '');
+        clearItem.addEventListener('click', async (ev) => {
+          ev.stopPropagation();
+          picker.remove();
+          try {
+            await api.templateAction({ action: 'bulk_group', ids: [t.id], group_name: null, group_color: null });
+            t.group_name = null; t.group_color = null;
+            const tpl = Store.state.templates.find(x => x.id === t.id);
+            if (tpl) { tpl.group_name = null; tpl.group_color = null; }
+            toast('Group cleared', 'success');
+            renderTemplateList();
+          } catch (err) { toast('Update failed: ' + err.message, 'danger'); }
+        });
+        picker.appendChild(clearItem);
+
+        // Name input with datalist
+        const dlId = 'grpDl_' + t.id;
+        const nameInp = document.createElement('input');
+        nameInp.className = 'form-control form-control-sm cosmic-input mt-1';
+        nameInp.placeholder = 'Group name…';
+        nameInp.value = t.group_name || '';
+        nameInp.setAttribute('list', dlId);
+        nameInp.style.cssText = 'font-size:.82rem;margin-bottom:.4rem;';
+        const dl = document.createElement('datalist');
+        dl.id = dlId;
+        existingGroups.forEach(g => { const o = document.createElement('option'); o.value = g; dl.appendChild(o); });
+        picker.appendChild(nameInp);
+        picker.appendChild(dl);
+
+        // Color swatches
+        const swRow = document.createElement('div');
+        swRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:.4rem;';
+        colorList.forEach(clr => {
+          const sw = document.createElement('span');
+          sw.style.cssText = `display:inline-block;width:20px;height:20px;border-radius:50%;background:${clr};` +
+            `border:${clr === pendingColor ? '2px solid #fff' : '2px solid transparent'};cursor:pointer;transition:border .12s;`;
+          sw.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            pendingColor = clr;
+            swRow.querySelectorAll('span').forEach(s => s.style.border = '2px solid transparent');
+            sw.style.border = '2px solid #fff';
+          });
+          swRow.appendChild(sw);
+        });
+        picker.appendChild(swRow);
+
+        // Apply button
+        const applyBtn = document.createElement('button');
+        applyBtn.className = 'btn btn-sm btn-primary w-100 cosmic-btn';
+        applyBtn.textContent = 'Apply';
+        applyBtn.style.fontSize = '.82rem';
+        applyBtn.addEventListener('click', async (ev) => {
+          ev.stopPropagation();
+          const gName = nameInp.value.trim();
+          if (!gName) { toast('Enter a group name', 'warning'); return; }
+          picker.remove();
+          try {
+            await api.templateAction({ action: 'bulk_group', ids: [t.id], group_name: gName, group_color: pendingColor });
+            t.group_name = gName; t.group_color = pendingColor;
+            const tpl = Store.state.templates.find(x => x.id === t.id);
+            if (tpl) { tpl.group_name = gName; tpl.group_color = pendingColor; }
+            toast(`Group set to "${gName}"`, 'success');
+            renderTemplateList();
+          } catch (err) { toast('Update failed: ' + err.message, 'danger'); }
+        });
+        picker.appendChild(applyBtn);
+
+        grpCell.appendChild(picker);
+        nameInp.focus();
+        const closeGrp = (ev) => { if (!grpCell.contains(ev.target)) { picker.remove(); document.removeEventListener('click', closeGrp); } };
+        setTimeout(() => document.addEventListener('click', closeGrp), 0);
+      });
+      tr.appendChild(grpCell);
+
 
       // Use count
       const useEl = h('td', { class: 'text-center' },
@@ -867,17 +1247,32 @@ async function renderTemplates() {
       );
       tr.appendChild(useEl);
 
+      // Visibility badge
+      const isOwner = parseInt(t.is_owner) === 1;
+      const isPublic = parseInt(t.is_public) === 1;
+      const visBadge = isPublic
+        ? h('span', { class: 'badge bg-success', title: 'Public — visible to all users' }, '🌐 Public')
+        : h('span', { class: 'badge text-bg-secondary', title: 'Private — only visible to you' }, '🔒 Private');
+      const ownerHint = !isOwner
+        ? h('div', { class: 'small text-muted mt-1', style: 'font-size:0.7rem' }, '👤 ' + (t.owner_username || 'Other user'))
+        : null;
+      const visCell = h('td', { class: 'text-center' }, visBadge);
+      if (ownerHint) visCell.appendChild(ownerHint);
+      tr.appendChild(visCell);
+
       // Date
       const dateStr = t.created_at ? new Date(t.created_at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—';
       tr.appendChild(h('td', { class: 'text-muted small', style: 'white-space:nowrap' }, dateStr));
 
-      // Actions
+      // Actions — restrict edit/delete to owner only
       const actCell = h('td', {});
       const actDiv = h('div', { class: 'd-flex gap-1' });
-      actDiv.appendChild(h('button', {
-        class: 'btn btn-sm btn-outline-light cosmic-btn', title: 'Edit', 'data-ripple': '',
-        onclick: () => openEditTemplateModal(t.id)
-      }, h('i', { class: 'bi bi-pencil' })));
+      if (isOwner) {
+        actDiv.appendChild(h('button', {
+          class: 'btn btn-sm btn-outline-light cosmic-btn', title: 'Edit', 'data-ripple': '',
+          onclick: () => openEditTemplateModal(t.id)
+        }, h('i', { class: 'bi bi-pencil' })));
+      }
       actDiv.appendChild(h('a', {
         href: '#/generate', class: 'btn btn-sm btn-outline-info cosmic-btn', title: 'Use in Generate',
         onclick: () => {
@@ -887,21 +1282,23 @@ async function renderTemplates() {
           }, 0);
         }
       }, h('i', { class: 'bi bi-play' })));
-      actDiv.appendChild(h('button', {
-        class: 'btn btn-sm btn-outline-danger cosmic-btn', title: 'Delete', 'data-ripple': '',
-        onclick: async () => {
-          const ok = await confirmDialog({ title: 'Delete template?', body: `Delete "${t.template_name}"? This cannot be undone.`, okText: 'Delete' });
-          if (!ok) return;
-          try {
-            const result = await api.del('templates.php', `id=${encodeURIComponent(t.id)}`);
-            if (result && result.success === false) throw new Error(result.error || 'Failed to delete');
-            toast('Template deleted', 'success');
-            await loadTemplates(true);
-            selectedIds.delete(t.id);
-            renderTemplateList();
-          } catch (e) { toast('Delete failed: ' + e.message, 'danger'); }
-        }
-      }, h('i', { class: 'bi bi-trash' })));
+      if (isOwner) {
+        actDiv.appendChild(h('button', {
+          class: 'btn btn-sm btn-outline-danger cosmic-btn', title: 'Delete', 'data-ripple': '',
+          onclick: async () => {
+            const ok = await confirmDialog({ title: 'Delete template?', body: `Delete "${t.template_name}"? This cannot be undone.`, okText: 'Delete' });
+            if (!ok) return;
+            try {
+              const result = await api.del('templates.php', `id=${encodeURIComponent(t.id)}`);
+              if (result && result.success === false) throw new Error(result.error || 'Failed to delete');
+              toast('Template deleted', 'success');
+              await loadTemplates(true);
+              selectedIds.delete(t.id);
+              renderTemplateList();
+            } catch (e) { toast('Delete failed: ' + e.message, 'danger'); }
+          }
+        }, h('i', { class: 'bi bi-trash' })));
+      }
       actCell.appendChild(actDiv);
       tr.appendChild(actCell);
 
@@ -976,17 +1373,30 @@ async function renderTemplates() {
   document.getElementById('bulkCategoryBtn')?.addEventListener('click', async () => {
     if (!selectedIds.size) return;
 
-    // Build the form body as a real DOM node
+    // Collect existing categories from the store for the dropdown
+    const existingCats = [...new Set(
+      Store.state.templates.map(t => t.category).filter(Boolean)
+    )].sort();
+
     const bodyNode = h('div', {},
       h('label', { class: 'form-label fw-bold mb-2' },
-        `Category for ${selectedIds.size} template${selectedIds.size !== 1 ? 's' : ''}:`
+        `Set category for ${selectedIds.size} template${selectedIds.size !== 1 ? 's' : ''}:`
       ),
       (() => {
-        const sel = h('select', { class: 'form-select cosmic-input', id: 'bulkCatSel' });
-        [['', '\u2014 Remove category \u2014'], ['Content', '\uD83D\uDCDD Content'],
-        ['Schema', '\uD83D\uDCCA Schema'], ['QA', '\u2714 QA'],
-        ['Coding', '\uD83D\uDCBB Coding'], ['Rich Media', '\uD83C\uDF9E Rich Media']
-        ].forEach(([val, label]) => sel.appendChild(h('option', { value: val }, label)));
+        const sel = h('select', { class: 'form-select cosmic-input mt-1', id: 'bulkCatSel' });
+        const opts = [
+          ['', '— Remove / Clear category —'],
+          ['Content', '📝 Content'],
+          ['Schema', '📊 Schema'],
+          ['QA', '✔ QA'],
+          ['Coding', '💻 Coding'],
+          ['Rich Media', '🎞 Rich Media'],
+        ];
+        // Add any custom categories already in the data
+        existingCats.forEach(c => {
+          if (!opts.some(([v]) => v === c)) opts.push([c, c]);
+        });
+        opts.forEach(([val, label]) => sel.appendChild(h('option', { value: val }, label)));
         return sel;
       })()
     );
@@ -998,10 +1408,12 @@ async function renderTemplates() {
       okClass: 'btn-primary'
     });
     if (!ok) return;
-    const cat = document.getElementById('bulkCatSel')?.value ?? null;
+    // Read value from the node directly (it's still in DOM inside the dialog)
+    const sel = bodyNode.querySelector('#bulkCatSel');
+    const cat = sel ? sel.value : null;
     try {
       await api.templateAction({ action: 'bulk_category', ids: [...selectedIds], category: cat || null });
-      toast('Category updated', 'success');
+      toast(cat ? `Category set to "${cat}"` : 'Category cleared', 'success');
       await loadTemplates(true);
       renderTemplateList();
     } catch (e) { toast('Error: ' + e.message, 'danger'); }
@@ -1017,33 +1429,44 @@ async function renderTemplates() {
       { name: 'Pink', value: '#db2777' }, { name: 'Slate', value: '#475569' }
     ];
 
-    // Build body as a DOM node
+    // Collect existing group names for a datalist
+    const existingGroups = [...new Set(
+      Store.state.templates.map(t => t.group_name).filter(Boolean)
+    )].sort();
+
+    // ──  Track selected color in closure (fixes the global querySelector bug) ──
+    let selectedColor = '#2563eb'; // default Blue
+
     const swatchRow = h('div', { class: 'd-flex flex-wrap gap-1 mt-1' });
     colorSwatches.forEach((c, idx) => {
-      const radio = h('input', { type: 'radio', name: 'grpColor', value: c.value, class: 'visually-hidden grp-color-radio', id: 'gc_' + idx });
-      if (idx === 6) radio.defaultChecked = true; // default: Blue
       const swatch = h('span', {
         class: 'grp-swatch', title: c.name,
         style: `display:inline-block;width:28px;height:28px;border-radius:50%;background:${c.value};` +
-          `border:${idx === 6 ? '3px solid #fff' : '2px solid transparent'};cursor:pointer;transition:border .15s`
+          `border:${c.value === selectedColor ? '3px solid #fff' : '2px solid transparent'};cursor:pointer;transition:border .15s`
       });
-      // Click the swatch → check the radio + update borders
       swatch.addEventListener('click', () => {
-        radio.checked = true;
+        selectedColor = c.value; // ← closure variable, no DOM query needed
         swatchRow.querySelectorAll('.grp-swatch').forEach(s => { s.style.border = '2px solid transparent'; });
         swatch.style.border = '3px solid #fff';
       });
-      const lbl = h('label', { for: 'gc_' + idx, title: c.name, style: 'cursor:pointer;margin:0' }, radio, swatch);
-      swatchRow.appendChild(lbl);
+      swatchRow.appendChild(swatch);
     });
 
+    const datalistId = 'grpNameList_' + Date.now();
     const bodyNode = h('div', {},
       h('div', { class: 'mb-3' },
-        h('label', { class: 'form-label fw-bold mb-1' }, 'Group Name:'),
-        h('input', {
-          class: 'form-control cosmic-input', id: 'bulkGroupName',
-          placeholder: 'e.g. Marketing Templates'
-        })
+        h('label', { class: 'form-label fw-bold mb-1' },
+          `Group name for ${selectedIds.size} template${selectedIds.size !== 1 ? 's' : ''}:`
+        ),
+        (() => {
+          const inp = h('input', {
+            class: 'form-control cosmic-input mt-1', id: 'bulkGroupName',
+            placeholder: 'e.g. Marketing Templates', list: datalistId
+          });
+          const dl = h('datalist', { id: datalistId });
+          existingGroups.forEach(g => dl.appendChild(h('option', { value: g })));
+          return h('div', {}, inp, dl);
+        })()
       ),
       h('div', {},
         h('label', { class: 'form-label fw-bold mb-1' }, 'Group Color:'),
@@ -1052,25 +1475,23 @@ async function renderTemplates() {
     );
 
     const ok = await confirmDialog({
-      title: 'Create / Assign Group',
+      title: 'Assign / Create Group',
       body: bodyNode,
       okText: 'Assign Group',
       okClass: 'btn-primary'
     });
     if (!ok) return;
-    const groupName = document.getElementById('bulkGroupName')?.value.trim();
+    const nameInput = bodyNode.querySelector('#bulkGroupName');
+    const groupName = nameInput ? nameInput.value.trim() : '';
     if (!groupName) { toast('Please enter a group name', 'warning'); return; }
-    const checkedColor = document.querySelector('input[name="grpColor"]:checked');
-    const groupColor = checkedColor ? checkedColor.value : '#2563eb';
     try {
-      await api.templateAction({ action: 'bulk_group', ids: [...selectedIds], group_name: groupName, group_color: groupColor });
-      toast('Group assigned to ' + selectedIds.size + ' template(s)', 'success');
+      await api.templateAction({ action: 'bulk_group', ids: [...selectedIds], group_name: groupName, group_color: selectedColor });
+      toast(`Group "${groupName}" assigned to ${selectedIds.size} template(s)`, 'success');
       await loadTemplates(true);
       renderTemplateList();
     } catch (e) { toast('Error: ' + e.message, 'danger'); }
   });
 
-  // (Swatch interaction is now handled inline inside each swatch listener above)
 
   document.getElementById('bulkExportBtn')?.addEventListener('click', async () => {
     if (!selectedIds.size) return;
@@ -1177,6 +1598,7 @@ async function renderTemplates() {
     const groupName = $('#tplGroupName')?.value.trim() || null;
     const checkedColor = document.querySelector('input[name="tplGroupColor"]:checked');
     const groupColor = groupName ? (checkedColor?.value || '#2563eb') : null;
+    const isPublic = document.getElementById('tplIsPublic')?.checked ? 1 : 0;
     if (!name || !text) return toast('Please fill in all required fields', 'warning');
     try {
       const variables = extractedVariables.map((varName, i) => {
@@ -1185,10 +1607,14 @@ async function renderTemplates() {
         if (!label) throw new Error(`Please provide a label for "${varName}"`);
         return { variable_name: varName, field_label: label, field_type: type };
       });
-      const result = await api.post('templates.php', { template_name: name, prompt_text: text, category, group_name: groupName, group_color: groupColor, variables });
+      const result = await api.post('templates.php', { template_name: name, prompt_text: text, category, group_name: groupName, group_color: groupColor, is_public: isPublic, variables });
       if (result && result.success === false) throw new Error(result.error || 'Failed to save template');
       toast('Template created!', 'success');
-      $('#tplForm').reset(); $('#varConfig').style.display = 'none'; extractedVariables = [];
+      $('#tplForm').reset();
+      // Reset privacy toggle hint
+      const tplHint = document.getElementById('tplVisibilityHint');
+      if (tplHint) tplHint.textContent = '🔒 Private — only visible to you';
+      $('#varConfig').style.display = 'none'; extractedVariables = [];
       await loadTemplates(true);
       renderTemplateList();
     } catch (e) { toast('Error saving template: ' + e.message, 'danger'); }
@@ -2721,6 +3147,26 @@ async function openEditTemplateModal(templateId) {
     const catSel = $('#editTplCategory');
     if (catSel) catSel.value = detail.category || '';
 
+    // Populate is_public toggle
+    const pubToggle = $('#editTplIsPublic');
+    const pubHint = $('#editTplVisibilityHint');
+    if (pubToggle) {
+      pubToggle.checked = !!parseInt(detail.is_public);
+      if (pubHint) {
+        pubHint.textContent = pubToggle.checked
+          ? '🌐 Public — visible and usable by all users'
+          : '🔒 Private — only visible to you';
+      }
+      // Wire hint on change
+      pubToggle.onchange = () => {
+        if (pubHint) {
+          pubHint.textContent = pubToggle.checked
+            ? '🌐 Public — visible and usable by all users'
+            : '🔒 Private — only visible to you';
+        }
+      };
+    }
+
     const cont = $('#editVarContainer');
     cont.innerHTML = '';
     (detail.variables || []).forEach((v, i) => cont.append(editVariableRow(v, i)));
@@ -2780,7 +3226,8 @@ async function openEditTemplateModal(templateId) {
         if (vars.some(v => !v.field_label || !v.variable_name)) throw new Error('Variables must have names and labels');
 
         const category = $('#editTplCategory')?.value || null;
-        const payload = { id: editTplCurrent.id, template_name: name, prompt_text: text, category, variables: vars };
+        const isPublic = $('#editTplIsPublic')?.checked ? 1 : 0;
+        const payload = { id: editTplCurrent.id, template_name: name, prompt_text: text, category, is_public: isPublic, variables: vars };
         const res = await api.updateTemplate(payload);
         if (res && res.success === false) throw new Error(res.error || 'Failed to update');
 
@@ -2801,6 +3248,7 @@ async function openEditTemplateModal(templateId) {
     toast('Failed to open editor: ' + e.message, 'danger');
   }
 }
+
 
 function updateRowNumbers(container) {
   [...container.children].forEach((row, i) => {
@@ -2936,8 +3384,8 @@ async function renderUsers() {
   const root = $('#view-root');
   root.innerHTML = '';
 
-  // Admin check
-  if (!window._currentUser || window._currentUser.role !== 'admin') {
+  // Admin check (admin or super_admin)
+  if (!window._currentUser || (window._currentUser.role !== 'admin' && window._currentUser.role !== 'super_admin')) {
     root.append(
       h('div', { class: 'alert alert-warning' },
         h('i', { class: 'bi bi-shield-exclamation me-2' }),
@@ -2981,6 +3429,7 @@ async function renderUsers() {
   }
 
   renderUsersTable();
+  renderSsoManager();  // SSO section below the users table
 
   // Create User modal handler
   $('#createUserBtn').addEventListener('click', showCreateUserModal);
@@ -3112,6 +3561,7 @@ function renderUsersTable() {
           try {
             const res = await fetch(API_BASE + 'users.php', {
               method: 'PUT',
+              credentials: 'same-origin',
               headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
               body: JSON.stringify(payload)
             });
@@ -3155,6 +3605,7 @@ function renderUsersTable() {
           try {
             const res = await fetch(API_BASE + `users.php?id=${user.id}`, {
               method: 'DELETE',
+              credentials: 'same-origin',
               headers: { 'Accept': 'application/json' }
             });
             const data = await res.json();
@@ -3187,10 +3638,37 @@ function renderUsersTable() {
 
         td.append(span);
       } else if (col.key === 'role') {
-        const badge = document.createElement('span');
-        badge.className = `role-badge ${user.role || 'user'}`;
-        badge.textContent = user.role || 'user';
-        td.append(badge);
+        // Inline role select (admins can change roles)
+        const roleSelect = document.createElement('select');
+        roleSelect.className = `role-badge ${user.role || 'user'} form-select-sm`;
+        roleSelect.style.cssText = 'background:transparent;border:none;padding:0.15rem .4rem;border-radius:.3rem;font-size:.8rem;font-weight:600;cursor:pointer;outline:none;';
+        [['user','User'],['admin','Admin'],['super_admin','Super Admin']].forEach(([v, l]) => {
+          const opt = document.createElement('option');
+          opt.value = v;
+          opt.textContent = l;
+          if (v === (user.role || 'user')) opt.selected = true;
+          roleSelect.appendChild(opt);
+        });
+        roleSelect.addEventListener('change', async () => {
+          const newRole = roleSelect.value;
+          if (newRole === user.role) return;
+          try {
+            const res = await fetch(API_BASE + 'users.php', {
+              method: 'PUT',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify({ id: user.id, username: user.username, role: newRole })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Update failed');
+            user.role = newRole;
+            const idx = _usersData.findIndex(u => u.id === user.id);
+            if (idx !== -1) _usersData[idx].role = newRole;
+            roleSelect.className = `role-badge ${newRole} form-select-sm`;
+            toast(`Role updated to ${newRole}`, 'success');
+          } catch (e) { toast('Role update failed: ' + e.message, 'danger'); roleSelect.value = user.role; }
+        });
+        td.append(roleSelect);
       } else if (col.key === 'created_at') {
         td.textContent = formatDateTime(user.created_at);
       } else {
@@ -3213,7 +3691,261 @@ function renderUsersTable() {
   tableWrap.append(footer);
 }
 
+// ── SSO Link Manager ─────────────────────────────────────────────────────────
+async function renderSsoManager() {
+  const root = $('#view-root');
+  if (!root) return;
+
+  // Section container
+  const section = h('div', { id: 'ssoManagerSection', class: 'mt-4' });
+  root.appendChild(section);
+
+  section.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem;">
+      <div>
+        <h4 style="margin:0;" class="text-gradient"><i class="bi bi-link-45deg me-2"></i>SSO Login Links</h4>
+        <p class="text-muted small mb-0">Generate single-use, time-limited links that log a user in without a password.</p>
+      </div>
+      <button class="btn btn-primary cosmic-btn" id="ssoCreateBtn" data-ripple>
+        <i class="bi bi-plus-circle me-1"></i> Generate New SSO Link
+      </button>
+    </div>
+
+    <!-- Generate form (collapsed by default) -->
+    <div id="ssoForm" style="display:none;" class="card card-surface mb-3 p-3">
+      <h6 class="mb-3"><i class="bi bi-magic me-1"></i>Create SSO Link</h6>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label fw-bold small">User <span class="text-danger">*</span></label>
+          <select class="form-select cosmic-input" id="ssoUserId">
+            <option value="">Loading users…</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-bold small">Label / Purpose</label>
+          <input type="text" class="form-control cosmic-input" id="ssoLabel" placeholder="e.g. Client demo, Client onboarding" maxlength="100">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-bold small">Expires In</label>
+          <select class="form-select cosmic-input" id="ssoTtl">
+            <option value="24">24 hours</option>
+            <option value="72">3 days</option>
+            <option value="168" selected>7 days (default)</option>
+            <option value="336">14 days</option>
+            <option value="720">30 days</option>
+          </select>
+        </div>
+      </div>
+      <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-success cosmic-btn" id="ssoDoCreate"><i class="bi bi-check-circle me-1"></i>Generate Link</button>
+        <button class="btn btn-outline-secondary cosmic-btn" id="ssoCancelCreate"><i class="bi bi-x me-1"></i>Cancel</button>
+      </div>
+      <!-- Result area -->
+      <div id="ssoResult" style="display:none;" class="mt-3 p-3 rounded" style="background:rgba(6,182,212,0.06);border:1px solid rgba(6,182,212,0.3);">
+        <div class="fw-bold small mb-1" style="color:#38bdf8;"><i class="bi bi-check-circle me-1"></i>SSO Link Generated!</div>
+        <div class="input-group mt-1">
+          <input type="text" class="form-control cosmic-input font-monospace" id="ssoLinkOutput" readonly style="font-size:.78rem;">
+          <button class="btn btn-outline-info cosmic-btn" id="ssoCopyLink" title="Copy link"><i class="bi bi-clipboard"></i></button>
+        </div>
+        <div class="text-muted small mt-1" id="ssoResultMeta"></div>
+      </div>
+    </div>
+
+    <!-- Tokens table -->
+    <div class="card card-surface" id="ssoTableWrap">
+      <div class="text-center p-4">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="text-muted mt-2 mb-0 small">Loading SSO tokens…</p>
+      </div>
+    </div>
+  `;
+
+  // Populate user dropdown
+  try {
+    const users = await fetch(API_BASE + 'sso.php?action=list_users', { credentials: 'same-origin' }).then(r => r.json());
+    const sel = document.getElementById('ssoUserId');
+    sel.innerHTML = '<option value="">— Select user —</option>';
+    (users || []).forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.id;
+      opt.textContent = `${u.username} (${u.role})`;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* ignore */ }
+
+  // Toggle form
+  document.getElementById('ssoCreateBtn').addEventListener('click', () => {
+    const f = document.getElementById('ssoForm');
+    f.style.display = f.style.display === 'none' ? '' : 'none';
+    document.getElementById('ssoResult').style.display = 'none';
+  });
+  document.getElementById('ssoCancelCreate').addEventListener('click', () => {
+    document.getElementById('ssoForm').style.display = 'none';
+  });
+
+  // Copy generated link
+  document.getElementById('ssoCopyLink').addEventListener('click', async () => {
+    const link = document.getElementById('ssoLinkOutput').value;
+    try {
+      await navigator.clipboard.writeText(link);
+      toast('SSO link copied to clipboard!', 'success');
+    } catch { toast('Copy failed', 'danger'); }
+  });
+
+  // Generate link
+  document.getElementById('ssoDoCreate').addEventListener('click', async () => {
+    const userId = document.getElementById('ssoUserId').value;
+    const label = document.getElementById('ssoLabel').value.trim();
+    const ttlHours = parseInt(document.getElementById('ssoTtl').value, 10);
+    if (!userId) { toast('Please select a user', 'warning'); return; }
+
+    const btn = document.getElementById('ssoDoCreate');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generating…';
+    try {
+      const res = await fetch(API_BASE + 'sso.php?action=create', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: parseInt(userId), label, ttl_hours: ttlHours })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+
+      document.getElementById('ssoLinkOutput').value = data.sso_url;
+      document.getElementById('ssoResultMeta').textContent =
+        `For: ${data.for_user} · Expires in: ${data.expires_in} · Single-use · Invalidated after first click`;
+      document.getElementById('ssoResult').style.display = '';
+      toast('SSO link generated!', 'success');
+      loadSsoTokens(); // refresh table
+    } catch (e) {
+      toast('Failed: ' + e.message, 'danger');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Generate Link';
+    }
+  });
+
+  loadSsoTokens();
+}
+
+async function loadSsoTokens() {
+  const wrap = document.getElementById('ssoTableWrap');
+  if (!wrap) return;
+
+  let tokens = [];
+  try {
+    const res = await fetch(API_BASE + 'sso.php?action=list', { credentials: 'same-origin' });
+    tokens = await res.json();
+    if (!Array.isArray(tokens)) tokens = [];
+  } catch (e) {
+    wrap.innerHTML = `<div class="alert alert-danger m-3">Failed to load SSO tokens: ${e.message}</div>`;
+    return;
+  }
+
+  if (tokens.length === 0) {
+    wrap.innerHTML = `
+      <div class="text-center text-muted p-4">
+        <i class="bi bi-link-45deg fs-1 mb-2 d-block" style="opacity:.3;"></i>
+        No SSO links generated yet. Click "Generate New SSO Link" above to create one.
+      </div>`;
+    return;
+  }
+
+  // Status badge helper
+  const statusBadge = (status) => {
+    const map = {
+      active: ['bg-success', '✅ Active'],
+      used: ['bg-secondary', '✔ Used'],
+      expired: ['bg-danger', '⏰ Expired'],
+    };
+    const [cls, label] = map[status] || ['bg-secondary', status];
+    return `<span class="badge ${cls}" style="font-size:.72rem;">${label}</span>`;
+  };
+
+  wrap.innerHTML = `
+    <table class="users-table" style="font-size:.83rem;">
+      <thead><tr>
+        <th>For User</th>
+        <th>Label</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th>Expires</th>
+        <th>Used At</th>
+        <th>Created By</th>
+        <th style="min-width:5rem;">Actions</th>
+      </tr></thead>
+      <tbody>
+        ${tokens.map(t => `
+          <tr data-sso-id="${t.id}">
+            <td><strong>${t.for_user}</strong></td>
+            <td class="text-muted">${t.label || '<em>—</em>'}</td>
+            <td>${statusBadge(t.status)}</td>
+            <td>${formatRelativeTime(t.created_at)}</td>
+            <td>${formatRelativeTime(t.expires_at)}</td>
+            <td>${t.used_at ? formatRelativeTime(t.used_at) : '<span class="text-muted">—</span>'}</td>
+            <td class="text-muted small">${t.created_by}</td>
+            <td>
+              <button class="btn btn-sm btn-outline-danger sso-revoke-btn" data-id="${t.id}" title="Revoke & delete this token">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="p-2 px-3 text-muted small">${tokens.length} SSO link${tokens.length !== 1 ? 's' : ''} total</div>
+  `;
+
+  // Revoke button handlers
+  wrap.querySelectorAll('.sso-revoke-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      if (!confirm('Permanently delete this SSO token? It can no longer be used.')) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch(API_BASE + 'sso.php?action=revoke', {
+          method: 'DELETE',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: parseInt(id) })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Revoke failed');
+        toast('SSO token revoked', 'success');
+        loadSsoTokens();
+      } catch (e) {
+        toast('Revoke failed: ' + e.message, 'danger');
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+function formatRelativeTime(isoStr) {
+  if (!isoStr) return '—';
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return isoStr;
+    const diff = Date.now() - d.getTime();
+    const abs = Math.abs(diff);
+    const mins = Math.floor(abs / 60000);
+    const hours = Math.floor(abs / 3600000);
+    const days = Math.floor(abs / 86400000);
+    const future = diff < 0;
+    let rel;
+    if (mins < 2) rel = 'just now';
+    else if (mins < 60) rel = `${mins}m`;
+    else if (hours < 48) rel = `${hours}h`;
+    else rel = `${days}d`;
+    if (mins >= 2) rel = future ? `in ${rel}` : `${rel} ago`;
+    const full = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    return `<span title="${full}" style="cursor:default;">${rel}</span>`;
+  } catch { return isoStr; }
+}
+
 function formatDateTime(isoStr) {
+
   if (!isoStr) return '—';
   try {
     const d = new Date(isoStr);
@@ -3265,10 +3997,11 @@ function showCreateUserModal() {
         <input type="password" class="form-control cosmic-input" id="newPassword" required minlength="6" placeholder="Minimum 6 characters">
       </div>
       <div class="mb-3">
-        <label class="form-label fw-bold">Role</label>
+        <label class="form-label fw-bold">Role Type</label>
         <select class="form-select cosmic-input" id="newRole">
-          <option value="user">User</option>
-          <option value="admin">Admin</option>
+          <option value="user">User — Can generate &amp; manage own templates</option>
+          <option value="admin">Admin — Full access except user management</option>
+          <option value="super_admin">Super Admin — Full access including all users &amp; templates</option>
         </select>
       </div>
       <div id="createUserError" class="alert alert-danger d-none mb-3"></div>
@@ -3415,9 +4148,9 @@ function showApp(user) {
   if (userEl) userEl.textContent = user.username || '';
   const roleEl = $('#loggedInRole');
   if (roleEl) roleEl.textContent = user.role || '';
-  // Show admin-only nav items
+  // Show admin-only nav items (admin and super_admin both see Users)
   const usersNav = $('#navUsers');
-  if (usersNav) usersNav.style.display = (user.role === 'admin') ? '' : 'none';
+  if (usersNav) usersNav.style.display = (user.role === 'admin' || user.role === 'super_admin') ? '' : 'none';
   // Store current user info globally
   window._currentUser = user;
 }
@@ -3485,20 +4218,71 @@ function initAuthHandlers() {
 
 // --- Boot ---
 (async function boot() {
-  try {
-    initThemeSwitcher();
-  } catch (e) { console.warn('Theme init error:', e); }
+  try { initThemeSwitcher(); } catch (e) { console.warn('Theme init error:', e); }
+  try { initFallingStars(); initRipple(); } catch (e) { console.warn('UI effects init error:', e); }
+  try { initAuthHandlers(); } catch (e) { console.warn('Auth handlers init error:', e); }
 
-  try {
-    initFallingStars();
-    initRipple();
-  } catch (e) { console.warn('UI effects init error:', e); }
+  // ── SSO token auto-login ─────────────────────────────────────────────────
+  const urlParams = new URLSearchParams(location.search);
+  const ssoToken = urlParams.get('sso_token');
 
-  try {
-    initAuthHandlers();
-  } catch (e) { console.warn('Auth handlers init error:', e); }
+  if (ssoToken) {
+    // Show a "signing in" spinner instead of the login form
+    const overlay = $('#loginOverlay');
+    if (overlay) {
+      overlay.style.display = '';
+      const form = overlay.querySelector('#loginForm');
+      if (form) form.style.display = 'none';
+      const spinDiv = document.createElement('div');
+      spinDiv.style.cssText = 'text-align:center;padding:2rem;';
+      spinDiv.innerHTML = `
+        <div class="spinner-border text-primary mb-3" role="status" style="width:3rem;height:3rem;"></div>
+        <div class="fw-bold" style="font-size:1.1rem;">Signing you in…</div>
+        <div class="text-muted small mt-1">Validating your secure link</div>
+      `;
+      overlay.querySelector('.login-card')?.appendChild(spinDiv);
+    }
 
-  // Check if already authenticated
+    try {
+      const res = await fetch(API_BASE + 'sso.php?action=redeem&token=' + encodeURIComponent(ssoToken), {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' }
+      });
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data && data.success) {
+        // Token redeemed — clean the URL then check session
+        history.replaceState({}, '', location.pathname);
+        const user = await checkAuth();
+        if (user) {
+          showApp(user);
+          await loadTemplates();
+          setActiveNav();
+          router();
+          toast(`Welcome, ${user.username}! Signed in via secure link.`, 'success');
+          return;
+        }
+      }
+      // Redeem failed — show error on login overlay
+      const errEl = $('#loginError');
+      if (errEl) {
+        errEl.textContent = (data && data.error) || 'SSO link is invalid or expired.';
+        errEl.classList.remove('d-none');
+      }
+      const form = $('#loginForm');
+      if (form) form.style.display = '';
+      overlay?.querySelector('.spinner-border')?.closest('div[style]')?.remove();
+    } catch (err) {
+      console.warn('SSO redeem error:', err);
+      const form = $('#loginForm');
+      if (form) form.style.display = '';
+    }
+    // Clean token from URL regardless
+    history.replaceState({}, '', location.pathname);
+    return;
+  }
+
+  // ── Regular session check ────────────────────────────────────────────────
   try {
     const user = await checkAuth();
     if (user) {
@@ -3507,9 +4291,8 @@ function initAuthHandlers() {
       setActiveNav();
       router();
     }
-    // If not authenticated, login overlay is already visible (default state)
   } catch (e) {
     console.warn('Boot auth check error:', e);
-    // Login overlay stays visible by default
   }
 })();
+

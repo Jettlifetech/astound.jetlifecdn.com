@@ -1,0 +1,113 @@
+﻿<!DOCTYPE HTML>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1024">
+<title>itour</title>
+
+<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+<!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+<!--[if lt IE 9]>
+    <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+    <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+<![endif]-->
+
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+<link rel="stylesheet" href="doc_files/css/style.css">
+<script src="https://code.jquery.com/jquery-3.1.0.min.js"></script>
+
+
+<link rel="stylesheet" href="css/itour.css">
+<script src="js/jquery.itour.js"></script>
+<script>
+$(window).on('load',function(){
+	/*Set Timeout*/
+	var tourTimeout = 5000;
+	
+	/*Pligon Initialization*/
+	var callTour = function(){
+		$('body').itour({
+			showAbsentElement:true,				
+			tourTitle:'Example «Auto-Timeout-Flag»',
+			introShow:true,
+			steps:[{
+				title:'Step 1',		
+				content:'Content 1',		
+				name:'.asEl_1'
+			},{
+				title:'Step 2',		
+				content:'Content 2',		
+				name:'.asEl_2'
+			},],
+			lang:{
+				introTitle:'Welcome to Auto Start demo'
+			},
+			create: function(){
+				localStorage.setItem('itourShowed', '1');	
+			},
+			abort: function(){
+				localStorage.setItem('itourLastDate', new Date());	
+			},
+			finish: function(){
+				localStorage.setItem('itourFinished', '1');
+			}
+		});		
+	}
+	
+	/*Checking the tour status*/
+	var preCallTour = function(){
+		if(localStorage.getItem('itourCalled')){	
+			callTour();
+		}else{
+			if(localStorage.getItem('itourShowed')){
+				if(localStorage.getItem('itourFinished')){
+					return false;
+				}else{
+					var interval = Date.parse(new Date(Date.now() - Date.parse(localStorage.getItem('itourLastDate') || '1/1/1917')));
+					if(interval > tourTimeout){
+						callTour();
+					}else{
+						return false;
+					}
+				}
+			}else{
+				callTour();
+			}	
+		}
+		localStorage.removeItem('itourCalled');		
+	}
+	
+	/*Running the status check when the page loads*/
+	preCallTour();
+
+	/*Adding a tour call by button*/
+	$('.start-tour').on('click',function(){
+		localStorage.setItem('itourCalled', '1');
+		preCallTour();
+		return false;
+	});
+});
+</script> 
+
+</head>
+<body>
+
+<div class="container">
+	<a href="documentation.html#autostart-timeout">Back to the documentation</a>
+	<h1>Example Page «itour - Auto Start - Timeout & Flag»</h1>
+	<p>Autostart on this page occurs immediately after the page is loaded<br>
+	1. New start depends on the set sleep time of the tour.<br>
+	2. If the user viewed the tour to the end, Auto Start is disabled forever</p>
+	
+	<p><a class="btn btn-primary start-tour" href="#">Start Tour</a></p>   
+	
+	<span class="asEl_1"> Element 1</span>
+	-
+	<span class="asEl_2"> Element 2</span>
+</div>	
+
+
+<link rel="stylesheet" href="doc_files/css/prism.css">
+<script src="doc_files/js/prism.js"></script>
+</body>
+</html>

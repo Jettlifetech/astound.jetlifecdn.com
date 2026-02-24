@@ -1,0 +1,438 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1540" font-family="'Segoe UI',Arial,sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d0f17"/>
+      <stop offset="100%" style="stop-color:#13161f"/>
+    </linearGradient>
+    <linearGradient id="purpGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#7c3aed"/>
+      <stop offset="100%" style="stop-color:#6d28d9"/>
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0891b2"/>
+      <stop offset="100%" style="stop-color:#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#059669"/>
+      <stop offset="100%" style="stop-color:#10b981"/>
+    </linearGradient>
+    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#b45309"/>
+      <stop offset="100%" style="stop-color:#f59e0b"/>
+    </linearGradient>
+    <marker id="arrowPurp" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrowCyan" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#06b6d4"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#10b981"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#f59e0b"/>
+    </marker>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1000" height="1540" fill="url(#bgGrad)"/>
+
+  <!-- Decorative grid -->
+  <g opacity="0.04" stroke="#ffffff" stroke-width="0.5">
+    <line x1="0" y1="0" x2="0" y2="1540"/>
+    <line x1="100" y1="0" x2="100" y2="1540"/>
+    <line x1="200" y1="0" x2="200" y2="1540"/>
+    <line x1="300" y1="0" x2="300" y2="1540"/>
+    <line x1="400" y1="0" x2="400" y2="1540"/>
+    <line x1="500" y1="0" x2="500" y2="1540"/>
+    <line x1="600" y1="0" x2="600" y2="1540"/>
+    <line x1="700" y1="0" x2="700" y2="1540"/>
+    <line x1="800" y1="0" x2="800" y2="1540"/>
+    <line x1="900" y1="0" x2="900" y2="1540"/>
+    <line x1="1000" y1="0" x2="1000" y2="1540"/>
+    <line x1="0" y1="0" x2="1000" y2="0"/>
+    <line x1="0" y1="100" x2="1000" y2="100"/>
+    <line x1="0" y1="200" x2="1000" y2="200"/>
+    <line x1="0" y1="300" x2="1000" y2="300"/>
+    <line x1="0" y1="400" x2="1000" y2="400"/>
+    <line x1="0" y1="500" x2="1000" y2="500"/>
+    <line x1="0" y1="600" x2="1000" y2="600"/>
+    <line x1="0" y1="700" x2="1000" y2="700"/>
+    <line x1="0" y1="800" x2="1000" y2="800"/>
+    <line x1="0" y1="900" x2="1000" y2="900"/>
+    <line x1="0" y1="1000" x2="1000" y2="1000"/>
+    <line x1="0" y1="1100" x2="1000" y2="1100"/>
+    <line x1="0" y1="1200" x2="1000" y2="1200"/>
+    <line x1="0" y1="1300" x2="1000" y2="1300"/>
+    <line x1="0" y1="1400" x2="1000" y2="1400"/>
+    <line x1="0" y1="1500" x2="1000" y2="1500"/>
+  </g>
+
+  <!-- ══════════════ TITLE ══════════════ -->
+  <rect x="50" y="20" width="900" height="70" rx="14" fill="rgba(124,58,237,0.12)" stroke="rgba(124,58,237,0.4)" stroke-width="1.5"/>
+  <text x="500" y="48" text-anchor="middle" font-size="20" font-weight="900" fill="url(#purpGrad)" filter="url(#glow)">⚡ PROMPT DB — USER FLOW DIAGRAM</text>
+  <text x="500" y="72" text-anchor="middle" font-size="12" fill="#64748b">Three ideal user journeys across the web application</text>
+
+  <!-- ══════════════ LEGEND ══════════════ -->
+  <rect x="50" y="108" width="900" height="44" rx="10" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+  <circle cx="120" cy="130" r="7" fill="url(#purpGrad)"/><text x="133" y="134" font-size="11" fill="#a78bfa">New User Onboarding</text>
+  <circle cx="290" cy="130" r="7" fill="url(#cyanGrad)"/><text x="303" y="134" font-size="11" fill="#38bdf8">Daily Prompt Workflow</text>
+  <circle cx="460" cy="130" r="7" fill="url(#greenGrad)"/><text x="473" y="134" font-size="11" fill="#10b981">Schema Generator Flow</text>
+  <circle cx="630" cy="130" r="7" fill="url(#orangeGrad)"/><text x="643" y="134" font-size="11" fill="#fbbf24">Admin User Management</text>
+  <rect x="780" y="123" width="30" height="14" rx="4" fill="rgba(124,58,237,0.3)" stroke="#7c3aed" stroke-width="1"/>
+  <text x="815" y="134" font-size="11" fill="#64748b">Page / Action</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- FLOW 1: NEW USER ONBOARDING (Left column, purple) -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+
+  <!-- Section label -->
+  <text x="170" y="185" text-anchor="middle" font-size="13" font-weight="700" fill="#a78bfa">① NEW USER ONBOARDING</text>
+
+  <!-- START -->
+  <ellipse cx="170" cy="210" rx="70" ry="22" fill="url(#purpGrad)" filter="url(#shadow)"/>
+  <text x="170" y="215" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">START / LOGIN PAGE</text>
+
+  <!-- Arrow -->
+  <line x1="170" y1="232" x2="170" y2="254" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrowPurp)"/>
+
+  <!-- Register / Login -->
+  <rect x="90" y="256" width="160" height="42" rx="10" fill="rgba(124,58,237,0.18)" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="170" y="272" text-anchor="middle" font-size="11" font-weight="600" fill="#a78bfa">Register Account</text>
+  <text x="170" y="286" text-anchor="middle" font-size="10" fill="#64748b">Set username + password</text>
+
+  <line x1="170" y1="298" x2="170" y2="320" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrowPurp)"/>
+
+  <!-- First Login -->
+  <rect x="90" y="322" width="160" height="42" rx="10" fill="rgba(124,58,237,0.18)" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="170" y="338" text-anchor="middle" font-size="11" font-weight="600" fill="#a78bfa">First Login → Generate</text>
+  <text x="170" y="352" text-anchor="middle" font-size="10" fill="#64748b">Auto-landed on #/generate</text>
+
+  <line x1="170" y1="364" x2="170" y2="386" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrowPurp)"/>
+
+  <!-- Settings — API keys -->
+  <rect x="90" y="388" width="160" height="42" rx="10" fill="rgba(124,58,237,0.18)" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="170" y="404" text-anchor="middle" font-size="11" font-weight="600" fill="#a78bfa">Settings → API Keys</text>
+  <text x="170" y="418" text-anchor="middle" font-size="10" fill="#64748b">Add Claude / OpenAI / Gemini key</text>
+
+  <line x1="170" y1="430" x2="170" y2="452" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrowPurp)"/>
+
+  <!-- Create first template -->
+  <rect x="90" y="454" width="160" height="42" rx="10" fill="rgba(124,58,237,0.18)" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="170" y="470" text-anchor="middle" font-size="11" font-weight="600" fill="#a78bfa">Templates → Create First</text>
+  <text x="170" y="484" text-anchor="middle" font-size="10" fill="#64748b">Write prompt + parse variables</text>
+
+  <line x1="170" y1="496" x2="170" y2="518" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrowPurp)"/>
+
+  <!-- Set privacy -->
+  <rect x="90" y="520" width="160" height="42" rx="10" fill="rgba(124,58,237,0.18)" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="170" y="536" text-anchor="middle" font-size="11" font-weight="600" fill="#a78bfa">Set Visibility</text>
+  <text x="170" y="550" text-anchor="middle" font-size="10" fill="#64748b">🔒 Private (default) or 🌐 Public</text>
+
+  <line x1="170" y1="562" x2="170" y2="584" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrowPurp)"/>
+
+  <!-- Create profile -->
+  <rect x="90" y="586" width="160" height="42" rx="10" fill="rgba(124,58,237,0.18)" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="170" y="602" text-anchor="middle" font-size="11" font-weight="600" fill="#a78bfa">Profiles → Create Profile</text>
+  <text x="170" y="616" text-anchor="middle" font-size="10" fill="#64748b">Save default variable values</text>
+
+  <line x1="170" y1="628" x2="170" y2="650" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrowPurp)"/>
+
+  <!-- Ready! -->
+  <ellipse cx="170" cy="668" rx="70" ry="22" fill="url(#greenGrad)" filter="url(#shadow)"/>
+  <text x="170" y="673" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">✅ READY TO USE</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- FLOW 2: DAILY PROMPT WORKFLOW (Centre, cyan) -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+
+  <text x="500" y="185" text-anchor="middle" font-size="13" font-weight="700" fill="#38bdf8">② DAILY PROMPT WORKFLOW</text>
+
+  <!-- START -->
+  <ellipse cx="500" cy="210" rx="70" ry="22" fill="url(#cyanGrad)" filter="url(#shadow)"/>
+  <text x="500" y="215" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">LOGIN → GENERATE</text>
+
+  <line x1="500" y1="232" x2="500" y2="254" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+  <!-- Select template -->
+  <rect x="420" y="256" width="160" height="42" rx="10" fill="rgba(6,182,212,0.12)" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="500" y="272" text-anchor="middle" font-size="11" font-weight="600" fill="#38bdf8">Select Template</text>
+  <text x="500" y="286" text-anchor="middle" font-size="10" fill="#64748b">Own or public templates</text>
+
+  <line x1="500" y1="298" x2="500" y2="320" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+  <!-- Autofill?  Decision -->
+  <polygon points="500,322 570,346 500,370 430,346" fill="rgba(6,182,212,0.15)" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="500" y="342" text-anchor="middle" font-size="10" font-weight="600" fill="#38bdf8">Use Profile</text>
+  <text x="500" y="357" text-anchor="middle" font-size="10" fill="#38bdf8">Autofill?</text>
+
+  <!-- Yes branch -->
+  <line x1="432" y1="346" x2="395" y2="346" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="413" y="341" font-size="9" fill="#06b6d4">Yes</text>
+  <rect x="330" y="332" width="60" height="28" rx="6" fill="rgba(6,182,212,0.18)" stroke="#06b6d4" stroke-width="1"/>
+  <text x="360" y="347" text-anchor="middle" font-size="9" fill="#38bdf8">Auto-fill</text>
+  <text x="360" y="358" text-anchor="middle" font-size="9" fill="#64748b">all fields</text>
+  <line x1="360" y1="360" x2="500" y2="395" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="4,2"/>
+
+  <!-- No branch continues down -->
+  <text x="510" y="378" font-size="9" fill="#06b6d4">No / Manual</text>
+  <line x1="500" y1="370" x2="500" y2="392" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+  <!-- Fill variables -->
+  <rect x="420" y="394" width="160" height="42" rx="10" fill="rgba(6,182,212,0.12)" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="500" y="410" text-anchor="middle" font-size="11" font-weight="600" fill="#38bdf8">Fill Variables</text>
+  <text x="500" y="424" text-anchor="middle" font-size="10" fill="#64748b">Type values into each field</text>
+
+  <line x1="500" y1="436" x2="500" y2="458" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+  <!-- Generate -->
+  <rect x="420" y="460" width="160" height="42" rx="10" fill="rgba(6,182,212,0.12)" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="500" y="476" text-anchor="middle" font-size="11" font-weight="600" fill="#38bdf8">Click Generate</text>
+  <text x="500" y="490" text-anchor="middle" font-size="10" fill="#64748b">Tokens replaced → prompt ready</text>
+
+  <line x1="500" y1="502" x2="500" y2="524" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+  <!-- Copy / AI -->
+  <polygon points="500,526 570,550 500,574 430,550" fill="rgba(6,182,212,0.15)" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="500" y="546" text-anchor="middle" font-size="10" font-weight="600" fill="#38bdf8">Send to</text>
+  <text x="500" y="561" text-anchor="middle" font-size="10" fill="#38bdf8">AI Chat?</text>
+
+  <!-- No: Copy only -->
+  <line x1="432" y1="550" x2="390" y2="550" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="366" y="545" font-size="9" fill="#06b6d4" text-anchor="middle">Copy Only</text>
+  <rect x="330" y="558" width="68" height="26" rx="6" fill="rgba(6,182,212,0.18)" stroke="#06b6d4" stroke-width="1"/>
+  <text x="364" y="575" text-anchor="middle" font-size="9" fill="#38bdf8">📋 Clipboard</text>
+
+  <!-- Yes: AI response -->
+  <text x="514" y="578" font-size="9" fill="#06b6d4">Yes</text>
+  <line x1="500" y1="574" x2="500" y2="596" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+  <!-- AI chat -->
+  <rect x="420" y="598" width="160" height="42" rx="10" fill="rgba(6,182,212,0.12)" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="500" y="614" text-anchor="middle" font-size="11" font-weight="600" fill="#38bdf8">AI Response Streams</text>
+  <text x="500" y="628" text-anchor="middle" font-size="10" fill="#64748b">Claude / GPT-4o / Gemini</text>
+
+  <line x1="500" y1="640" x2="500" y2="662" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+  <!-- History auto-save -->
+  <rect x="420" y="664" width="160" height="28" rx="10" fill="rgba(16,185,129,0.12)" stroke="#10b981" stroke-width="1.5"/>
+  <text x="500" y="682" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">💾 Auto-saved to History</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- FLOW 3: SCHEMA GENERATOR (Right column, green) -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+
+  <text x="830" y="185" text-anchor="middle" font-size="13" font-weight="700" fill="#10b981">③ SCHEMA GENERATOR</text>
+
+  <!-- START -->
+  <ellipse cx="830" cy="210" rx="70" ry="22" fill="url(#greenGrad)" filter="url(#shadow)"/>
+  <text x="830" y="215" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">GO TO #/SCHEMA</text>
+
+  <line x1="830" y1="232" x2="830" y2="254" stroke="#10b981" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- Input mode -->
+  <polygon points="830,256 900,280 830,304 760,280" fill="rgba(16,185,129,0.15)" stroke="#10b981" stroke-width="1.5"/>
+  <text x="830" y="276" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">Choose</text>
+  <text x="830" y="291" text-anchor="middle" font-size="10" fill="#10b981">Input Mode</text>
+
+  <!-- Branch A: Import URL -->
+  <line x1="762" y1="280" x2="700" y2="280" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="728" y="276" font-size="9" fill="#10b981" text-anchor="middle">Import URL</text>
+  <rect x="648" y="292" width="100" height="40" rx="8" fill="rgba(16,185,129,0.1)" stroke="#10b981" stroke-width="1"/>
+  <text x="698" y="308" text-anchor="middle" font-size="9" fill="#10b981">Enter URL</text>
+  <text x="698" y="320" text-anchor="middle" font-size="9" fill="#64748b">→ Fetch Markdown</text>
+  <line x1="698" y1="332" x2="698" y2="352" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <line x1="698" y1="352" x2="808" y2="352" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4,2"/>
+
+  <!-- Branch B: Paste Markdown -->
+  <text x="830" y="315" font-size="9" fill="#10b981" text-anchor="middle">Paste MD</text>
+  <line x1="830" y1="304" x2="830" y2="350" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4,2"/>
+
+  <!-- Branch C: URL List -->
+  <line x1="898" y1="280" x2="950" y2="280" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="923" y="276" font-size="9" fill="#10b981" text-anchor="middle">URL List</text>
+  <rect x="910" y="292" width="100" height="40" rx="8" fill="rgba(16,185,129,0.1)" stroke="#10b981" stroke-width="1"/>
+  <text x="960" y="308" text-anchor="middle" font-size="9" fill="#10b981">Paste N URLs</text>
+  <text x="960" y="320" text-anchor="middle" font-size="9" fill="#64748b">one per line</text>
+  <line x1="960" y1="332" x2="960" y2="352" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <line x1="960" y1="352" x2="852" y2="352" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4,2"/>
+
+  <!-- Merge point -->
+  <line x1="830" y1="350" x2="830" y2="372" stroke="#10b981" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- Select AI -->
+  <rect x="750" y="374" width="160" height="42" rx="10" fill="rgba(16,185,129,0.12)" stroke="#10b981" stroke-width="1.5"/>
+  <text x="830" y="390" text-anchor="middle" font-size="11" font-weight="600" fill="#10b981">Select AI Provider</text>
+  <text x="830" y="404" text-anchor="middle" font-size="10" fill="#64748b">Claude / OpenAI / Gemini</text>
+
+  <line x1="830" y1="416" x2="830" y2="438" stroke="#10b981" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- Generate Schema -->
+  <rect x="750" y="440" width="160" height="42" rx="10" fill="rgba(16,185,129,0.12)" stroke="#10b981" stroke-width="1.5"/>
+  <text x="830" y="456" text-anchor="middle" font-size="11" font-weight="600" fill="#10b981">Generate Schema</text>
+  <text x="830" y="470" text-anchor="middle" font-size="10" fill="#64748b">Streams JSON-LD output</text>
+
+  <line x1="830" y1="482" x2="830" y2="504" stroke="#10b981" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- Copy or Validate -->
+  <polygon points="830,506 900,530 830,554 760,530" fill="rgba(16,185,129,0.15)" stroke="#10b981" stroke-width="1.5"/>
+  <text x="830" y="526" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">Next</text>
+  <text x="830" y="541" text-anchor="middle" font-size="10" fill="#10b981">Action?</text>
+
+  <!-- Copy schema -->
+  <line x1="762" y1="530" x2="700" y2="530" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="728" y="526" font-size="9" fill="#10b981" text-anchor="middle">Copy</text>
+  <rect x="660" y="542" width="80" height="26" rx="6" fill="rgba(16,185,129,0.1)" stroke="#10b981" stroke-width="1"/>
+  <text x="700" y="559" text-anchor="middle" font-size="9" fill="#10b981">📋 Clipboard</text>
+
+  <!-- Validate -->
+  <text x="840" y="558" font-size="9" fill="#10b981">Validate</text>
+  <line x1="830" y1="554" x2="830" y2="576" stroke="#10b981" stroke-width="2" marker-end="url(#arrowGreen)"/>
+  <rect x="750" y="578" width="160" height="36" rx="10" fill="rgba(16,185,129,0.12)" stroke="#10b981" stroke-width="1.5"/>
+  <text x="830" y="596" text-anchor="middle" font-size="10" font-weight="600" fill="#10b981">Google Rich Results Test</text>
+  <text x="830" y="608" text-anchor="middle" font-size="9" fill="#64748b">Opens in new tab</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- FLOW 4: ADMIN USER MANAGEMENT (Bottom, orange) -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+
+  <!-- Divider -->
+  <line x1="50" y1="730" x2="950" y2="730" stroke="rgba(255,255,255,0.08)" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="500" y="760" text-anchor="middle" font-size="13" font-weight="700" fill="#fbbf24">④ ADMIN — USER MANAGEMENT &amp; TEMPLATE SHARING</text>
+
+  <!-- Admin Login -->
+  <ellipse cx="500" cy="790" rx="90" ry="22" fill="url(#orangeGrad)" filter="url(#shadow)"/>
+  <text x="500" y="795" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">LOGIN AS ADMIN</text>
+
+  <line x1="500" y1="812" x2="500" y2="834" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrowOrange)"/>
+
+  <!-- Three parallel admin actions -->
+  <!-- Branch left: Users -->
+  <line x1="500" y1="834" x2="260" y2="834" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <line x1="260" y1="834" x2="260" y2="856" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrowOrange)"/>
+  <rect x="175" y="858" width="170" height="42" rx="10" fill="rgba(245,158,11,0.12)" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="260" y="874" text-anchor="middle" font-size="11" font-weight="600" fill="#fbbf24">#/users → Manage Accounts</text>
+  <text x="260" y="888" text-anchor="middle" font-size="10" fill="#64748b">Create / delete users, set roles</text>
+
+  <!-- Branch centre: Public Templates -->
+  <line x1="500" y1="834" x2="500" y2="856" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrowOrange)"/>
+  <rect x="415" y="858" width="170" height="42" rx="10" fill="rgba(245,158,11,0.12)" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="500" y="874" text-anchor="middle" font-size="11" font-weight="600" fill="#fbbf24">Make Templates Public</text>
+  <text x="500" y="888" text-anchor="middle" font-size="10" fill="#64748b">Set 🌐 Public for org-wide sharing</text>
+
+  <!-- Branch right: Schema Prompts -->
+  <line x1="500" y1="834" x2="740" y2="834" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <line x1="740" y1="834" x2="740" y2="856" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrowOrange)"/>
+  <rect x="655" y="858" width="170" height="42" rx="10" fill="rgba(245,158,11,0.12)" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="740" y="874" text-anchor="middle" font-size="11" font-weight="600" fill="#fbbf24">Settings → Schema Prompts</text>
+  <text x="740" y="888" text-anchor="middle" font-size="10" fill="#64748b">Customize AI system prompts</text>
+
+  <!-- Merge back -->
+  <line x1="260" y1="900" x2="260" y2="940" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <line x1="260" y1="940" x2="500" y2="940" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <line x1="500" y1="900" x2="500" y2="940" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <line x1="740" y1="900" x2="740" y2="940" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <line x1="740" y1="940" x2="500" y2="940" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <line x1="500" y1="940" x2="500" y2="962" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrowOrange)"/>
+
+  <ellipse cx="500" cy="980" rx="90" ry="22" fill="url(#greenGrad)" filter="url(#shadow)"/>
+  <text x="500" y="985" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">✅ ADMIN TASKS COMPLETE</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- SYSTEM ARCHITECTURE NOTE -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+
+  <rect x="50" y="1030" width="900" height="240" rx="14" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+  <text x="500" y="1058" text-anchor="middle" font-size="14" font-weight="700" fill="#e2e8f0">DATA &amp; API ARCHITECTURE</text>
+
+  <!-- DB -->
+  <rect x="380" y="1070" width="240" height="100" rx="12" fill="rgba(124,58,237,0.1)" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="500" y="1092" text-anchor="middle" font-size="12" font-weight="700" fill="#a78bfa">MySQL Database</text>
+  <text x="500" y="1110" text-anchor="middle" font-size="10" fill="#64748b">prompt_db (PDO / PHP)</text>
+  <text x="500" y="1126" text-anchor="middle" font-size="10" fill="#64748b">Tables: users, prompt_templates,</text>
+  <text x="500" y="1140" text-anchor="middle" font-size="10" fill="#64748b">template_variables, profiles, history</text>
+  <text x="500" y="1156" text-anchor="middle" font-size="9" fill="#7c3aed">UNIQUE (user_id, template_name)</text>
+
+  <!-- PHP API -->
+  <rect x="80" y="1070" width="200" height="100" rx="12" fill="rgba(6,182,212,0.08)" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="180" y="1092" text-anchor="middle" font-size="12" font-weight="700" fill="#38bdf8">PHP REST API</text>
+  <text x="180" y="1110" text-anchor="middle" font-size="9" fill="#64748b">api/templates.php</text>
+  <text x="180" y="1124" text-anchor="middle" font-size="9" fill="#64748b">api/profiles.php</text>
+  <text x="180" y="1138" text-anchor="middle" font-size="9" fill="#64748b">api/history.php · api/auth.php</text>
+  <text x="180" y="1152" text-anchor="middle" font-size="9" fill="#64748b">api/crawl.php · api/ai-chat.php</text>
+  <text x="180" y="1166" text-anchor="middle" font-size="9" fill="#64748b">api/users.php · api/schema-settings.php</text>
+
+  <!-- Frontend -->
+  <rect x="720" y="1070" width="200" height="100" rx="12" fill="rgba(16,185,129,0.08)" stroke="#10b981" stroke-width="1.5"/>
+  <text x="820" y="1092" text-anchor="middle" font-size="12" font-weight="700" fill="#10b981">SPA Frontend</text>
+  <text x="820" y="1110" text-anchor="middle" font-size="9" fill="#64748b">app.js (Vanilla JS Router)</text>
+  <text x="820" y="1124" text-anchor="middle" font-size="9" fill="#64748b">app.css (Cosmic theme)</text>
+  <text x="820" y="1138" text-anchor="middle" font-size="9" fill="#64748b">Bootstrap 5 · Bootstrap Icons</text>
+  <text x="820" y="1152" text-anchor="middle" font-size="9" fill="#64748b">SSE streaming for AI output</text>
+  <text x="820" y="1166" text-anchor="middle" font-size="9" fill="#64748b">localStorage for API keys</text>
+
+  <!-- Connections -->
+  <line x1="280" y1="1120" x2="380" y2="1120" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrowPurp)"/>
+  <line x1="620" y1="1120" x2="720" y2="1120" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrowPurp)"/>
+  <line x1="720" y1="1120" x2="620" y2="1120" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrowGreen)" transform="translate(0,12)"/>
+  <line x1="380" y1="1132" x2="280" y2="1132" stroke="#06b6d4" stroke-width="1.5" marker-end="url(#arrowCyan)"/>
+
+  <!-- External AI -->
+  <rect x="380" y="1190" width="240" height="60" rx="10" fill="rgba(245,158,11,0.08)" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="500" y="1212" text-anchor="middle" font-size="11" font-weight="700" fill="#fbbf24">External AI Providers</text>
+  <text x="500" y="1228" text-anchor="middle" font-size="9" fill="#64748b">Anthropic Claude · OpenAI GPT-4o</text>
+  <text x="500" y="1242" text-anchor="middle" font-size="9" fill="#64748b">Google Gemini (via api/ai-chat.php)</text>
+
+  <line x1="500" y1="1170" x2="500" y2="1190" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrowOrange)"/>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- NAVIGATION MAP -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+
+  <text x="500" y="1305" text-anchor="middle" font-size="14" font-weight="700" fill="#e2e8f0">SIDEBAR NAVIGATION MAP</text>
+
+  <!-- Nav nodes -->
+  <rect x="50" y="1320" width="110" height="36" rx="8" fill="rgba(124,58,237,0.2)" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="105" y="1342" text-anchor="middle" font-size="11" font-weight="600" fill="#a78bfa">🪄 Generate</text>
+
+  <rect x="180" y="1320" width="110" height="36" rx="8" fill="rgba(6,182,212,0.2)" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="235" y="1342" text-anchor="middle" font-size="11" font-weight="600" fill="#38bdf8">🗂 Templates</text>
+
+  <rect x="310" y="1320" width="110" height="36" rx="8" fill="rgba(16,185,129,0.2)" stroke="#10b981" stroke-width="1.5"/>
+  <text x="365" y="1342" text-anchor="middle" font-size="11" font-weight="600" fill="#10b981">🕰️ History</text>
+
+  <rect x="440" y="1320" width="110" height="36" rx="8" fill="rgba(245,158,11,0.2)" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="495" y="1342" text-anchor="middle" font-size="11" font-weight="600" fill="#fbbf24">👤 Profiles</text>
+
+  <rect x="570" y="1320" width="110" height="36" rx="8" fill="rgba(16,185,129,0.2)" stroke="#10b981" stroke-width="1.5"/>
+  <text x="625" y="1342" text-anchor="middle" font-size="11" font-weight="600" fill="#10b981">🧬 Schema</text>
+
+  <rect x="700" y="1320" width="110" height="36" rx="8" fill="rgba(124,58,237,0.2)" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="755" y="1342" text-anchor="middle" font-size="11" font-weight="600" fill="#a78bfa">⚙️ Settings</text>
+
+  <rect x="830" y="1320" width="111" height="36" rx="8" fill="rgba(245,158,11,0.2)" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="885" y="1342" text-anchor="middle" font-size="11" font-weight="600" fill="#fbbf24">👥 Users*</text>
+
+  <!-- Cross-links -->
+  <line x1="160" y1="1338" x2="180" y2="1338" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" marker-end="url(#arrowPurp)"/>
+  <line x1="290" y1="1338" x2="310" y2="1338" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" marker-end="url(#arrowCyan)"/>
+  <line x1="420" y1="1338" x2="440" y2="1338" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+  <line x1="550" y1="1338" x2="570" y2="1338" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" marker-end="url(#arrowOrange)"/>
+  <line x1="680" y1="1338" x2="700" y2="1338" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+  <line x1="810" y1="1338" x2="830" y2="1338" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" marker-end="url(#arrowPurp)"/>
+
+  <!-- Admin note -->
+  <text x="885" y="1374" text-anchor="middle" font-size="9" fill="#64748b">* Admin role only</text>
+
+  <!-- Footer -->
+  <text x="500" y="1510" text-anchor="middle" font-size="10" fill="#334155">Prompt DB — User Flow Diagram — Daine Dvorak 2026</text>
+  <text x="500" y="1528" text-anchor="middle" font-size="9" fill="#1e293b">prompt-db.dainedvorak.com / tour-documentation/userflow.svg</text>
+
+</svg>

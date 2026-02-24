@@ -16,15 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once '../config/auth.php';
 require_once '../config/users_db.php';
 
-// Require authentication
-$authUser = requireAuth();
-
-// Require admin role
-if ($authUser['role'] !== 'admin') {
-    http_response_code(403);
-    echo json_encode(['error' => 'Admin access required']);
-    exit;
-}
+// Require authentication + admin or super_admin role
+$authUser = requireAdmin();
 
 $method = $_SERVER['REQUEST_METHOD'];
 

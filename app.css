@@ -1270,6 +1270,12 @@ pre.pretty {
   color: #dc2626;
 }
 
+.users-table .role-badge.super_admin {
+  background: rgba(234, 179, 8, .15);
+  color: #ca8a04;
+  letter-spacing: .01em;
+}
+
 .users-table .role-badge.user {
   background: rgba(14, 165, 233, .12);
   color: #0ea5e9;
@@ -1285,12 +1291,13 @@ pre.pretty {
     padding: 0.5rem 0.6rem;
   }
 }
+
 /* ── Schema Generator ──────────────────────────────────────────── */
 .schema-output-box {
   min-height: 200px;
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .schema-pre {
@@ -1310,7 +1317,87 @@ pre.pretty {
 }
 
 /* Mode toggle btn-group polish */
-#modeImport:checked + label,
-#modePaste:checked + label {
+#modeImport:checked+label,
+#modePaste:checked+label {
   z-index: 1;
+}
+
+/* ============================================
+   CLICK-TO-COPY TERMINAL COMMAND BLOCKS
+   ============================================ */
+
+/* Generated prompt output container */
+.generated-out {
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--glass-brd);
+  border-radius: 0.75rem;
+  padding: 1rem 1.1rem;
+  min-height: 3rem;
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.88rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Individual terminal command chip */
+.cmd-chip {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 0.45rem 0;
+  padding: 0.6rem 0.95rem;
+  border-radius: 0.6rem;
+  cursor: pointer;
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  background: rgba(6, 182, 212, 0.08);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #e0f7fa;
+  word-break: break-all;
+}
+
+.cmd-chip:hover {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: rgba(6, 182, 212, 0.6);
+  box-shadow: 0 2px 12px rgba(6, 182, 212, 0.2);
+}
+
+.cmd-chip:active {
+  transform: scale(0.99);
+}
+
+/* Light theme overrides for cmd-chip */
+[data-theme="light"] .cmd-chip,
+[data-theme="mint"] .cmd-chip,
+[data-theme="cloud"] .cmd-chip,
+[data-theme="sand"] .cmd-chip {
+  background: rgba(6, 182, 212, 0.06);
+  border-color: rgba(6, 182, 212, 0.3);
+  color: #0e7490;
+}
+
+[data-theme="light"] .cmd-chip:hover,
+[data-theme="mint"] .cmd-chip:hover,
+[data-theme="cloud"] .cmd-chip:hover,
+[data-theme="sand"] .cmd-chip:hover {
+  background: rgba(6, 182, 212, 0.12);
+}
+
+[data-theme="light"] .generated-out,
+[data-theme="mint"] .generated-out,
+[data-theme="cloud"] .generated-out,
+[data-theme="sand"] .generated-out {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* Monospaced textarea in template creator */
+#tplText.font-monospace {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace !important;
+  font-size: 0.88rem;
+  line-height: 1.65;
+  tab-size: 2;
 }
