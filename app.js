@@ -322,6 +322,16 @@ const Routes = {
 function setActiveNav() {
   const hash = location.hash || '#/generate';
   $$('.app-sidebar .nav-link').forEach(a => a.classList.toggle('active', a.getAttribute('href') === hash));
+  // Auto-expand the dropdown if any child link is active
+  const dropdownItems = $('#sidebarMoreItems');
+  const toggle = $('#moreToggle');
+  if (dropdownItems && toggle) {
+    const hasActiveChild = !!dropdownItems.querySelector('.nav-link.active');
+    if (hasActiveChild) {
+      dropdownItems.style.display = '';
+      toggle.classList.add('open');
+    }
+  }
 }
 async function router() {
   setActiveNav();
@@ -331,18 +341,18 @@ async function router() {
 }
 window.addEventListener('hashchange', router);
 
-// --- Global search & refresh ---
-$('#globalSearch').addEventListener('input', e => {
-  Store.set({ searchQuery: e.target.value.toLowerCase() });
-});
-$('#refreshBtn').addEventListener('click', async () => {
-  try {
-    await Promise.all([loadTemplates(true), loadHistory(true)]);
-    toast('Data refreshed among the stars ✨', 'success');
-  } catch (e) {
-    toast('Refresh failed: ' + e.message, 'danger');
+// --- Sidebar dropdown toggle ---
+(function () {
+  const toggle = $('#moreToggle');
+  const items = $('#sidebarMoreItems');
+  if (toggle && items) {
+    toggle.addEventListener('click', () => {
+      const open = items.style.display === 'none';
+      items.style.display = open ? '' : 'none';
+      toggle.classList.toggle('open', open);
+    });
   }
-});
+})();
 
 // --- Data loading ---
 async function loadTemplates(force = false) {
@@ -388,7 +398,7 @@ async function renderGenerate() {
     )
   );
 
-  const card = h('div', { class: 'card card-surface' });
+  const card = h('div', { class: 'card card-surface', 'data-name': 'generate-main-card' });
   const body = h('div', { class: 'card-body' });
 
   // 1. Profile Selector
@@ -416,7 +426,7 @@ async function renderGenerate() {
   // 2. Template Selector
   const selectGroup = h('div', { class: 'mb-3' },
     h('label', { for: 'genTemplate', class: 'form-label fw-bold' }, '2. Prompt Template'),
-    h('select', { class: 'form-select cosmic-input', id: 'genTemplate' },
+    h('select', { class: 'form-select cosmic-input', id: 'genTemplate', 'data-name': 'generate-template-select' },
       h('option', { value: '' }, 'Select a template…'),
       state.templates
         .filter(t => t.template_name?.toLowerCase().includes(Store.state.searchQuery))
@@ -426,26 +436,26 @@ async function renderGenerate() {
 
   const variablesContainer = h('div', { id: 'genVars', class: 'row g-3' });
   const actionsRow = h('div', { class: 'd-flex gap-2' });
-  const genBtn = h('button', { class: 'btn btn-primary cosmic-btn', id: 'genBtn', 'data-ripple': '' }, h('i', { class: 'bi bi-magic me-1' }), 'Generate');
-  const resetBtn = h('button', { class: 'btn btn-outline-light cosmic-btn', 'data-ripple': '' }, h('i', { class: 'bi bi-arrow-counterclockwise me-1' }), 'Reset');
+  const genBtn = h('button', { class: 'btn btn-primary cosmic-btn', id: 'genBtn', 'data-ripple': '', 'data-name': 'generate-btn' }, h('i', { class: 'bi bi-magic me-1' }), 'Generate');
+  const resetBtn = h('button', { class: 'btn btn-outline-light cosmic-btn', 'data-ripple': '', 'data-name': 'generate-reset-btn' }, h('i', { class: 'bi bi-arrow-counterclockwise me-1' }), 'Reset');
 
   actionsRow.append(genBtn, resetBtn);
 
   body.append(selectGroup, variablesContainer, actionsRow);
   card.append(body);
 
-  const outCard = h('div', { class: 'card card-surface mt-3', id: 'outputCard', style: 'display:none;' });
+  const outCard = h('div', { class: 'card card-surface mt-3', id: 'outputCard', style: 'display:none;', 'data-name': 'generate-output-card' });
   const outBody = h('div', { class: 'card-body' },
     h('div', { class: 'd-flex justify-content-between align-items-center mb-2 flex-wrap gap-2' },
       h('h5', { class: 'mb-0 text-white' }, 'Generated Prompt'),
       h('div', { class: 'd-flex gap-2 align-items-center flex-wrap' },
         h('button', { class: 'btn btn-outline-light btn-sm cosmic-btn', id: 'copyBtn', 'data-ripple': '' }, h('i', { class: 'bi bi-clipboard me-1' }), 'Copy'),
-        h('select', { class: 'form-select form-select-sm cosmic-input', id: 'aiProviderSelect', style: 'width:auto;min-width:130px;' },
+        h('select', { class: 'form-select form-select-sm cosmic-input', id: 'aiProviderSelect', style: 'width:auto;min-width:130px;', 'data-name': 'generate-ai-provider-select' },
           h('option', { value: 'claude' }, 'Claude'),
           h('option', { value: 'openai' }, 'OpenAI'),
           h('option', { value: 'gemini' }, 'Gemini')
         ),
-        h('button', { class: 'btn btn-success btn-sm cosmic-btn', id: 'sendToAiBtn', 'data-ripple': '' },
+        h('button', { class: 'btn btn-success btn-sm cosmic-btn', id: 'sendToAiBtn', 'data-ripple': '', 'data-name': 'generate-send-ai-btn' },
           h('i', { class: 'bi bi-send me-1' }), 'Send to AI Tool'
         )
       )
@@ -455,7 +465,7 @@ async function renderGenerate() {
   outCard.append(outBody);
 
   // AI Response card
-  const aiCard = h('div', { class: 'card card-surface mt-3', id: 'aiResponseCard', style: 'display:none;' });
+  const aiCard = h('div', { class: 'card card-surface mt-3', id: 'aiResponseCard', style: 'display:none;', 'data-name': 'generate-ai-response-card' });
   const aiBody = h('div', { class: 'card-body' },
     h('div', { class: 'd-flex justify-content-between align-items-center mb-2' },
       h('h5', { class: 'mb-0 text-white' }, h('i', { class: 'bi bi-robot me-2' }), 'AI Response'),
@@ -609,6 +619,7 @@ async function renderGenerate() {
     try {
       const res = await fetch(API_BASE + 'ai-chat.php', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, provider, api_key: apiKey }),
         signal: aiAbortController.signal
@@ -843,24 +854,44 @@ async function renderTemplates() {
       wrapCmdBtn,
       h('span', { class: 'small text-muted ms-2' },
         'Select text → click to wrap in ',
-        h('code', { style: 'background:rgba(6,182,212,0.15);color:#38bdf8;padding:1px 5px;border-radius:3px;' }, '{{…}}'))
+        h('code', { style: 'background:rgba(6,182,212,0.15);color:#38bdf8;padding:1px 5px;border-radius:3px; padding-bottom: 5%;' }, '{{…}}'))
     ),
     tplTextarea,
     // Syntax guide
-    h('div', { class: 'mt-2 p-3 rounded', style: 'background:rgba(6,182,212,0.06);border:1px solid rgba(6,182,212,0.2);' },
-      h('div', { class: 'fw-bold small mb-2', style: 'color:#38bdf8;' }, h('i', { class: 'bi bi-info-circle me-1' }), 'Syntax Guide'),
-      h('div', { class: 'small', style: 'display:grid;gap:0.4rem;' },
-        h('div', {},
-          h('code', { style: 'background:rgba(124,58,237,0.2);color:#a78bfa;padding:1px 5px;border-radius:3px;' }, '[variable]'),
-          h('span', { class: 'text-muted ms-2' }, '— Dynamic field (replaced when user clicks Generate)')
+    h('div', { class: 'content-box-hover floating d-flex flex-column justify-content-center', style: 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 1.25rem; box-shadow: 0 15px 35px rgba(0,0,0,0.2), 0 5px 15px rgba(0,0,0,0.1); transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px); padding: 2.5rem; max-width: 600px; width: 100%; color: white; ' },
+      h('h4', { class: 'fw-bold mb-4 border-bottom pb-3 border-opacity-25 border-light' },
+        h('i', { class: 'fas fa-terminal me-2' }),
+        ' Syntax Guide'
+      ),
+      h('div', { class: 'mb-1' },
+        h('p', { class: 'mb-0 fw-medium ms-1', style: 'font-size: 20px;' },
+          h('strong', {}, '#1 '),
+          ' Dynamic field (replaced when user clicks Generate)'
         ),
-        h('div', {},
-          h('code', { style: 'background:rgba(6,182,212,0.2);color:#38bdf8;padding:1px 5px;border-radius:3px;' }, '{{terminal command here}}'),
-          h('span', { class: 'text-muted ms-2' }, '— Click-to-copy terminal block in the output')
+        h('span', { class: 'badge bg-dark text-light fs-6 mb-2 rounded-pill px-3 py-2 shadow-sm border border-secondary border-opacity-50' }, '[variable]')
+      ),
+      h('hr', {}),
+      h('div', { class: 'mb-1' },
+        h('p', { class: 'mb-0 fw-medium', style: 'font-size: 20px;' },
+          h('strong', {}, '#2 '),
+          ' Click-to-copy terminal block in the output'
         ),
-        h('div', {},
-          h('code', { style: 'background:rgba(6,182,212,0.2);color:#38bdf8;padding:1px 5px;border-radius:3px;' }, '{{CREATE DATABASE [databaseName];}}'),
-          h('span', { class: 'text-muted ms-2' }, '— Variables work inside terminal blocks too')
+        h('div', { class: 'terminal-hover click-to-copy mb-2', 'data-clipboard': '{{terminal command here}}', style: 'background: #1e1e1e; color: #00ff00; font-family: \'Courier New\', Courier, monospace; padding: 12px 18px; border-radius: 0.5rem; cursor: pointer; transition: all 0.3s ease; position: relative; overflow: hidden; border: 1px solid rgba(0,255,0,0.2); box-shadow: inset 0 2px 10px rgba(0,0,0,0.5); word-wrap: break-word;' },
+          '{{terminal command here}}',
+          h('i', { class: 'fas fa-copy float-end mt-1 text-muted' })
+        )
+      ),
+      h('hr', {}),
+      h('div', {},
+        h('p', { class: 'mb-0 fw-medium ms-1', style: 'font-size: 20px;' },
+          h('strong', {}, '#3 '),
+          'Variables work inside terminal blocks too'
+        ),
+        h('div', { class: 'terminal-hover click-to-copy mb-2', 'data-clipboard': '{{CREATE DATABASE [databaseName];}}', style: 'background: #1e1e1e; color: #00ff00; font-family: \'Courier New\', Courier, monospace; padding: 12px 18px; border-radius: 0.5rem; cursor: pointer; transition: all 0.3s ease; position: relative; overflow: hidden; border: 1px solid rgba(0,255,0,0.2); box-shadow: inset 0 2px 10px rgba(0,0,0,0.5); word-wrap: break-word;' },
+          '{{CREATE DATABASE ',
+          h('span', { style: 'color: #ff9d00;' }, '[databaseName]'),
+          ';}}',
+          h('i', { class: 'fas fa-copy float-end mt-1 text-muted' })
         )
       )
     )
@@ -1104,7 +1135,7 @@ async function renderTemplates() {
           { v: 'Coding', l: '💻 Coding' },
           { v: 'Rich Media', l: '🎞 Rich Media' },
           // Add custom categories
-          ...[...new Set(Store.state.templates.map(x => x.category).filter(c => c && !['Content','Schema','QA','Coding','Rich Media'].includes(c)))]
+          ...[...new Set(Store.state.templates.map(x => x.category).filter(c => c && !['Content', 'Schema', 'QA', 'Coding', 'Rich Media'].includes(c)))]
             .sort().map(c => ({ v: c, l: c }))
         ];
         allCats.forEach(({ v, l }) => {
@@ -1150,7 +1181,7 @@ async function renderTemplates() {
 
         const existingGroups = [...new Set(Store.state.templates.map(x => x.group_name).filter(Boolean))].sort();
         const colorList = [
-          '#e11d48','#ea580c','#d97706','#65a30d','#059669','#0891b2','#2563eb','#7c3aed','#db2777','#475569'
+          '#e11d48', '#ea580c', '#d97706', '#65a30d', '#059669', '#0891b2', '#2563eb', '#7c3aed', '#db2777', '#475569'
         ];
         let pendingColor = t.group_color || '#2563eb';
 
@@ -2152,6 +2183,72 @@ async function renderSchemaGen() {
   });
   urlsPanel.appendChild(urlListArea);
 
+  // ── Optional: Upload file of URLs ──────────────────────────────────────
+  const fileUploadWrap = h('div', { class: 'mt-3' });
+  fileUploadWrap.appendChild(h('label', { class: 'form-label fw-semibold small' },
+    h('i', { class: 'bi bi-upload me-1' }), 'Or Upload a File ',
+    h('span', { class: 'text-muted' }, '(optional — .txt, .csv)')
+  ));
+  const fileInput = h('input', {
+    type: 'file', class: 'form-control cosmic-input form-control-sm',
+    id: 'urlFileUpload', accept: '.txt,.csv,.tsv'
+  });
+  fileUploadWrap.appendChild(fileInput);
+  urlsPanel.appendChild(fileUploadWrap);
+
+  // ── Output Log Box ─────────────────────────────────────────────────────
+  const logBox = h('div', {
+    id: 'sgLogBox',
+    class: 'font-monospace mt-3',
+    style: 'display:none;background:#1a1a2e;color:#c8c8d4;border:1px solid #333;border-radius:6px;padding:10px 12px;max-height:200px;overflow-y:auto;font-size:0.78rem;line-height:1.6;white-space:pre-wrap;'
+  });
+  urlsPanel.appendChild(logBox);
+
+  // Helper: append a line to the log box with optional type colouring
+  function logMsg(text, type) {
+    logBox.style.display = '';
+    const line = document.createElement('div');
+    if (type === 'error')   line.style.color = '#ff6b6b';
+    if (type === 'success') line.style.color = '#51cf66';
+    if (type === 'warn')    line.style.color = '#fcc419';
+    if (type === 'info')    line.style.color = '#74c0fc';
+    const ts = new Date().toLocaleTimeString();
+    line.textContent = '[' + ts + '] ' + text;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+  function clearLog() { logBox.innerHTML = ''; logBox.style.display = 'none'; }
+
+  // Wire file upload → parse URLs and populate textarea
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    clearLog();
+    logMsg('Reading file: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)', 'info');
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result || '';
+      // Extract URLs: split by newlines/commas, filter valid http(s) URLs
+      const urls = text.split(/[\r\n,]+/)
+        .map(u => u.trim().replace(/^["']|["']$/g, ''))
+        .filter(u => /^https?:\/\/.+/.test(u));
+      if (!urls.length) {
+        logMsg('No valid URLs found in file. Expected http:// or https:// URLs, one per line or comma-separated.', 'error');
+        return;
+      }
+      // Append to existing textarea content (don't overwrite)
+      const existing = urlListArea.value.trim();
+      urlListArea.value = existing ? existing + '\n' + urls.join('\n') : urls.join('\n');
+      logMsg('Loaded ' + urls.length + ' URL' + (urls.length !== 1 ? 's' : '') + ' from ' + file.name, 'success');
+      // List first few
+      const preview = urls.slice(0, 5);
+      preview.forEach((u, i) => logMsg('  ' + (i + 1) + '. ' + u, 'info'));
+      if (urls.length > 5) logMsg('  \u2026and ' + (urls.length - 5) + ' more', 'info');
+    };
+    reader.onerror = () => logMsg('Failed to read file: ' + (reader.error?.message || 'unknown error'), 'error');
+    reader.readAsText(file);
+  });
+
   // Tab content wrapper
   const tabContent = h('div', { class: 'tab-content' });
   tabContent.append(importPanel, pastePanel, urlsPanel);
@@ -2333,7 +2430,9 @@ async function renderSchemaGen() {
       if (res.error) throw new Error(res.error);
       const md = res.markdown || '';
       if (!md) throw new Error('No content extracted from that URL');
-      mdOutputArea.value = md;
+      // Normalize whitespace: collapse 3+ blank lines to one
+      const mdClean = md.replace(/\n{3,}/g, '\n\n').trim();
+      mdOutputArea.value = mdClean;
       mdBlock.style.display = '';
       crawlStatus.className = 'alert alert-success mt-2';
       crawlStatus.textContent = '\u2713 Imported "' + (res.title || url) + '" \u2014 ' + md.length.toLocaleString() + ' characters';
@@ -2376,6 +2475,8 @@ async function renderSchemaGen() {
       outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
       genSchemaBtn.disabled = true;
       genSchemaBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing\u2026';
+      clearLog();
+      logMsg('Starting batch schema generation for ' + urls.length + ' URL' + (urls.length !== 1 ? 's' : ''), 'info');
 
       let allText = '';
 
@@ -2384,6 +2485,7 @@ async function renderSchemaGen() {
         const pct = Math.round((i / urls.length) * 100);
         batchProgressBar.style.width = pct + '%';
         batchProgressLabel.textContent = 'Processing ' + (i + 1) + ' of ' + urls.length + ': ' + url;
+        logMsg('(' + (i + 1) + '/' + urls.length + ') Generating schema for: ' + url, 'info');
 
         const urlHeader = h('div', { class: (i > 0 ? 'border-top pt-3 mt-3' : 'pt-1') });
         const badge = h('span', { class: 'badge bg-primary me-2' }, (i + 1) + '/' + urls.length);
@@ -2400,6 +2502,7 @@ async function renderSchemaGen() {
         try {
           const response = await fetch(API_BASE + 'ai-chat.php', {
             method: 'POST',
+            credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt, provider, api_key: apiKey })
           });
@@ -2410,17 +2513,20 @@ async function renderSchemaGen() {
           const text = await streamToElement(response, pre);
           allText += '\n\n/* === ' + url + ' === */\n' + text;
           badge.className = 'badge bg-success me-2';
+          logMsg('\u2713 Schema generated for: ' + url, 'success');
         } catch (err) {
           pre.textContent = '\u26A0 Error: ' + err.message;
           pre.className = 'schema-pre text-danger mb-0';
           badge.className = 'badge bg-danger me-2';
           toast('Error on ' + url + ': ' + err.message, 'danger');
+          logMsg('\u2717 Error on ' + url + ': ' + err.message, 'error');
         }
       }
 
       batchProgressBar.style.width = '100%';
       batchProgressBar.classList.remove('progress-bar-animated');
       batchProgressLabel.textContent = '\u2713 All ' + urls.length + ' URL' + (urls.length !== 1 ? 's' : '') + ' processed';
+      logMsg('\u2713 Batch complete \u2014 ' + urls.length + ' URL' + (urls.length !== 1 ? 's' : '') + ' processed', 'success');
       schemaOutput.dataset.schemaText = allText;
       genSchemaBtn.disabled = false;
       updateKeyBadge();
@@ -2456,6 +2562,7 @@ async function renderSchemaGen() {
     try {
       const response = await fetch(API_BASE + 'ai-chat.php', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, provider, api_key: apiKey })
       });
@@ -2517,6 +2624,8 @@ async function renderSchemaGen() {
     idProgressBar.style.width = '0%';
     idProgressBar.classList.add('progress-bar-animated');
     idProgressMsg.textContent = 'Starting\u2026';
+    clearLog();
+    logMsg('Starting schema type identification for ' + urls.length + ' URL' + (urls.length !== 1 ? 's' : ''), 'info');
 
     const csvRows = [['URL', 'Applicable Schema Types', 'Details']];
 
@@ -2527,19 +2636,23 @@ async function renderSchemaGen() {
 
       // Step 1: Crawl
       idProgressMsg.textContent = '(' + (i + 1) + '/' + urls.length + ') Crawling: ' + url + '\u2026';
+      logMsg('(' + (i + 1) + '/' + urls.length + ') Crawling: ' + url, 'info');
       let crawlOk = false;
       try {
         const crawlRes = await api.post('crawl.php', { url });
         if (crawlRes.error) throw new Error(crawlRes.error);
         crawlOk = true;
+        logMsg('\u2713 Crawl OK: ' + url, 'success');
       } catch (err) {
         // Crawl failed — note it, continue
         csvRows.push([url, 'CRAWL ERROR', err.message]);
+        logMsg('\u2717 Crawl failed: ' + url + ' — ' + err.message, 'error');
         continue;
       }
 
       // Step 2: Send to AI to identify schema types
       idProgressMsg.textContent = '(' + (i + 1) + '/' + urls.length + ') Identifying schema types for: ' + url + '\u2026';
+      logMsg('(' + (i + 1) + '/' + urls.length + ') Identifying schema types for: ' + url, 'info');
       const prompt = identifyTpl.replace('[PAGE_URL]', url);
       try {
         const response = await fetch(API_BASE + 'ai-chat.php', {
@@ -2589,15 +2702,18 @@ async function renderSchemaGen() {
         const typesStr = typeNames.length ? typeNames.join(', ') : fullText.substring(0, 300);
         const detailsStr = details.length ? details.join(' | ') : '';
         csvRows.push([url, typesStr, detailsStr]);
+        logMsg('\u2713 Found ' + typeNames.length + ' schema type' + (typeNames.length !== 1 ? 's' : '') + ': ' + typesStr, 'success');
       } catch (err) {
         csvRows.push([url, 'AI ERROR', err.message]);
         toast('Error on ' + url + ': ' + err.message, 'danger');
+        logMsg('\u2717 AI error on ' + url + ': ' + err.message, 'error');
       }
     }
 
     // Step 3: Generate CSV
     idProgressBar.style.width = '95%';
     idProgressMsg.textContent = 'Writing CSV report\u2026';
+    logMsg('Writing CSV report\u2026', 'info');
 
     const csvContent = csvRows.map(row =>
       row.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(',')
@@ -2633,6 +2749,7 @@ async function renderSchemaGen() {
     genSchemaBtn.disabled = false;
     updateKeyBadge();
     identifyBtn.innerHTML = '<i class="bi bi-search me-2"></i>Identify applicable Schema Types';
+    logMsg('\u2713 Report complete \u2014 ' + (csvRows.length - 1) + ' URL' + (csvRows.length - 1 !== 1 ? 's' : '') + ' analyzed. CSV auto-downloaded.', 'success');
     toast('Done! CSV report downloaded with ' + (csvRows.length - 1) + ' URL' + (csvRows.length - 1 !== 1 ? 's' : ''), 'success');
   });
 
@@ -2699,19 +2816,19 @@ function renderSettings() {
   );
 
   // Tabs
-  const tabNav = h('ul', { class: 'nav nav-tabs mb-4', role: 'tablist' },
+  const tabNav = h('ul', { class: 'nav nav-tabs mb-4', role: 'tablist', 'data-name': 'settings-tabs' },
     h('li', { class: 'nav-item', role: 'presentation' },
-      h('button', { class: 'nav-link active', id: 'look-tab', 'data-bs-toggle': 'tab', 'data-bs-target': '#look-panel', type: 'button', role: 'tab' },
+      h('button', { class: 'nav-link active', id: 'look-tab', 'data-bs-toggle': 'tab', 'data-bs-target': '#look-panel', type: 'button', role: 'tab', 'data-name': 'settings-tab-look' },
         h('i', { class: 'bi bi-palette me-2' }), 'Look and Feel'
       )
     ),
     h('li', { class: 'nav-item', role: 'presentation' },
-      h('button', { class: 'nav-link', id: 'apikeys-tab', 'data-bs-toggle': 'tab', 'data-bs-target': '#apikeys-panel', type: 'button', role: 'tab' },
+      h('button', { class: 'nav-link', id: 'apikeys-tab', 'data-bs-toggle': 'tab', 'data-bs-target': '#apikeys-panel', type: 'button', role: 'tab', 'data-name': 'settings-tab-apikeys' },
         h('i', { class: 'bi bi-key me-2' }), 'API Keys'
       )
     ),
     h('li', { class: 'nav-item', role: 'presentation' },
-      h('button', { class: 'nav-link', id: 'schemagen-tab', 'data-bs-toggle': 'tab', 'data-bs-target': '#schemagen-panel', type: 'button', role: 'tab' },
+      h('button', { class: 'nav-link', id: 'schemagen-tab', 'data-bs-toggle': 'tab', 'data-bs-target': '#schemagen-panel', type: 'button', role: 'tab', 'data-name': 'settings-tab-schema' },
         h('i', { class: 'bi bi-braces me-2' }), 'Schema Gen Settings'
       )
     )
@@ -2731,7 +2848,8 @@ function renderSettings() {
       id: `input-${storageKey}`,
       placeholder: placeholder,
       value: savedVal,
-      autocomplete: 'off'
+      autocomplete: 'off',
+      'data-name': `apikey-field-${storageKey}`
     });
     const toggleBtn = h('button', {
       class: 'btn btn-outline-secondary',
@@ -2758,7 +2876,7 @@ function renderSettings() {
         h('div', { class: 'card-body' },
           h('h5', { class: 'mb-3' }, h('i', { class: 'bi bi-palette-fill me-2' }), 'Color Theme'),
           h('p', { class: 'text-muted mb-4' }, 'Choose a color palette for the interface.'),
-          h('div', { class: 'row g-3', id: 'themeGrid' })
+          h('div', { class: 'row g-3', id: 'themeGrid', 'data-name': 'settings-theme-grid' })
         )
       ),
       // Style Filter Section
@@ -2766,7 +2884,7 @@ function renderSettings() {
         h('div', { class: 'card-body' },
           h('h5', { class: 'mb-3' }, h('i', { class: 'bi bi-brush me-2' }), 'UI Style'),
           h('p', { class: 'text-muted mb-4' }, 'Apply a design style filter over your chosen colors.'),
-          h('div', { class: 'row g-3', id: 'styleGrid' })
+          h('div', { class: 'row g-3', id: 'styleGrid', 'data-name': 'settings-style-grid' })
         )
       )
     ),
@@ -2793,7 +2911,7 @@ function renderSettings() {
               ),
               h('input', { type: 'file', class: 'd-none', id: 'importApiKeysFile', accept: '.json' })
             ),
-            h('button', { class: 'btn btn-success cosmic-btn', id: 'saveApiKeys', 'data-ripple': '' },
+            h('button', { class: 'btn btn-success cosmic-btn', id: 'saveApiKeys', 'data-ripple': '', 'data-name': 'settings-save-api-keys-btn' },
               h('i', { class: 'bi bi-save me-1' }), 'Save API Keys'
             )
           )
@@ -3642,7 +3760,7 @@ function renderUsersTable() {
         const roleSelect = document.createElement('select');
         roleSelect.className = `role-badge ${user.role || 'user'} form-select-sm`;
         roleSelect.style.cssText = 'background:transparent;border:none;padding:0.15rem .4rem;border-radius:.3rem;font-size:.8rem;font-weight:600;cursor:pointer;outline:none;';
-        [['user','User'],['admin','Admin'],['super_admin','Super Admin']].forEach(([v, l]) => {
+        [['user', 'User'], ['admin', 'Admin'], ['super_admin', 'Super Admin']].forEach(([v, l]) => {
           const opt = document.createElement('option');
           opt.value = v;
           opt.textContent = l;

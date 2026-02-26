@@ -194,9 +194,9 @@ function htmlToMarkdown(string $html, string $baseUrl = ''): string {
     }, $html);
 
     // Line breaks / divs / sections → newlines
-    $html = preg_replace('/<br\s*\/?>/i', "\n", $html);
+    $html = preg_replace('/<br\s*\/?>/', "\n", $html);
     $html = preg_replace('/<\/(div|section|article|main)[^>]*>/i', "\n", $html);
-    $html = preg_replace('/<hr[^>]*\/?>/i', "\n---\n", $html);
+    $html = preg_replace('/<hr[^>]*\/?>/', "\n---\n", $html);
     $html = preg_replace('/&nbsp;/i', ' ', $html);
 
     // Strip remaining tags
@@ -205,9 +205,22 @@ function htmlToMarkdown(string $html, string $baseUrl = ''): string {
     // Decode HTML entities
     $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
-    // Clean up excessive whitespace/newlines
+    // Ensure valid UTF-8 (prevents json_encode failures downstream)
+    $html = mb_convert_encoding($html, 'UTF-8', 'UTF-8');
+    if (function_exists('iconv')) {
+        $clean = @iconv('UTF-8', 'UTF-8//IGNORE', $html);
+        if ($clean !== false) $html = $clean;
+    }
+
+    // ── Aggressive whitespace cleanup ──────────────────────────────────────
+    // Strip trailing spaces from every line
+    $html = preg_replace('/[  \t]+$/m', '', $html);  // trailing spaces/tabs per line
+    // Strip lines that contain only whitespace
+    $html = preg_replace('/^[\s]+$/m', '', $html);
+    // Collapse 3+ consecutive blank lines down to one blank line
     $html = preg_replace('/\n{3,}/', "\n\n", $html);
-    $html = preg_replace('/[ \t]+\n/', "\n", $html);
+    // Remove leading blank lines
+    $html = ltrim($html, "\n");
     $html = trim($html);
 
     return $html;

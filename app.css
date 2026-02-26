@@ -2,7 +2,7 @@
 
 /* CSS Custom Props & Color System */
 :root {
-  --sidebar-width: 25%;
+  --sidebar-width: max-content;
 
   /* Ripple */
   --ripple-x: 50%;
@@ -510,8 +510,34 @@ body {
   border-radius: .75rem;
   color: var(--muted);
   margin: .1rem .25rem;
+  padding: .45rem .75rem;
+  white-space: nowrap;
   transition: transform .2s ease, background .2s ease, color .2s ease, box-shadow .2s ease;
   position: relative;
+}
+
+/* Sidebar dropdown */
+.sidebar-dropdown-toggle {
+  cursor: pointer;
+}
+
+.sidebar-dropdown-toggle .sidebar-chevron {
+  transition: transform .25s ease;
+  font-size: .65rem;
+}
+
+.sidebar-dropdown-toggle.open .sidebar-chevron {
+  transform: rotate(180deg);
+}
+
+.sidebar-dropdown-items {
+  padding-left: .75rem;
+}
+
+.sidebar-dropdown-items .nav-link {
+  font-size: .88rem;
+  padding-top: .35rem;
+  padding-bottom: .35rem;
 }
 
 .app-sidebar .nav-link:hover {

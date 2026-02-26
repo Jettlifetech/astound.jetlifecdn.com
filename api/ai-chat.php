@@ -77,6 +77,12 @@ if (!in_array($provider, $validProviders, true)) {
 // URLs that are already part of [text](url) Markdown links are skipped.
 $prompt = expandUrlsInPrompt($prompt);
 
+// ── UTF-8 Sanitization ────────────────────────────────────────────────────────
+// json_encode() returns FALSE (silently!) if the string contains invalid UTF-8
+// sequences, which causes an empty POST body to be sent to the AI API.
+// Always sanitize the prompt before encoding it into any API payload.
+$prompt = sanitizeForJson($prompt);
+
 // ── SSE helpers ───────────────────────────────────────────────────────────────
 function sendSSE($data) {
     echo "data: " . json_encode($data) . "\n\n";
@@ -88,6 +94,22 @@ function sendDone() {
     echo "data: [DONE]\n\n";
     if (ob_get_level()) ob_flush();
     flush();
+}
+
+/**
+ * Ensures a string is valid UTF-8 and safe for json_encode.
+ * Replaces or removes invalid byte sequences rather than letting
+ * json_encode() silently return false.
+ */
+function sanitizeForJson(string $str): string {
+    // Convert to UTF-8, replacing invalid bytes with a replacement character
+    $str = mb_convert_encoding($str, 'UTF-8', 'UTF-8');
+    // As a belt-and-suspenders fallback, use iconv with IGNORE
+    if (function_exists('iconv')) {
+        $clean = @iconv('UTF-8', 'UTF-8//IGNORE', $str);
+        if ($clean !== false) $str = $clean;
+    }
+    return $str;
 }
 
 // Route to provider
@@ -329,9 +351,9 @@ function htmlToMarkdown(string $html, string $baseUrl = ''): string {
     }, $html);
 
     // Line breaks / structural elements → newlines
-    $html = preg_replace('/<br\s*\/?>/i', "\n", $html);
+    $html = preg_replace('/<br\s*\/?>/', "\n", $html);
     $html = preg_replace('/<\/(div|section|article|main|li)[^>]*>/i', "\n", $html);
-    $html = preg_replace('/<hr[^>]*\/?>/i', "\n---\n", $html);
+    $html = preg_replace('/<hr[^>]*\/?>/', "\n---\n", $html);
     $html = preg_replace('/&nbsp;/i', ' ', $html);
 
     // Strip remaining tags
@@ -340,9 +362,18 @@ function htmlToMarkdown(string $html, string $baseUrl = ''): string {
     // Decode HTML entities
     $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
-    // Clean up excessive whitespace/newlines
-    $html = preg_replace('/\n{3,}/', "\n\n", $html);
-    $html = preg_replace('/[ \t]+\n/', "\n", $html);
+    // Ensure valid UTF-8 (prevents json_encode silent failure)
+    $html = mb_convert_encoding($html, 'UTF-8', 'UTF-8');
+    if (function_exists('iconv')) {
+        $clean = @iconv('UTF-8', 'UTF-8//IGNORE', $html);
+        if ($clean !== false) $html = $clean;
+    }
+
+    // Aggressive whitespace cleanup
+    $html = preg_replace('/[ \t]+$/m', '', $html);   // trailing spaces per line
+    $html = preg_replace('/^\s+$/m', '', $html);       // lines of only whitespace
+    $html = preg_replace('/\n{3,}/', "\n\n", $html);   // max one blank line
+    $html = ltrim($html, "\n");
     $html = trim($html);
 
     return $html;
@@ -356,13 +387,18 @@ function htmlToMarkdown(string $html, string $baseUrl = ''): string {
 function streamClaude(string $prompt, string $apiKey): void {
     $url = 'https://api.anthropic.com/v1/messages';
     $payload = json_encode([
-        'model'      => 'claude-sonnet-4-20250514',
+        'model'      => 'claude-opus-4-5',
         'max_tokens' => 8192,
         'stream'     => true,
         'messages'   => [
             ['role' => 'user', 'content' => $prompt]
         ]
-    ]);
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+    if ($payload === false) {
+        sendSSE(['error' => 'Failed to encode request (json_encode error: ' . json_last_error_msg() . ')']);
+        return;
+    }
 
     $headers = [
         'Content-Type: application/json',
@@ -415,12 +451,17 @@ function streamClaude(string $prompt, string $apiKey): void {
 function streamOpenAI(string $prompt, string $apiKey): void {
     $url = 'https://api.openai.com/v1/chat/completions';
     $payload = json_encode([
-        'model'      => 'gpt-4o',
-        'stream'     => true,
-        'messages'   => [
+        'model'    => 'gpt-4o',
+        'stream'   => true,
+        'messages' => [
             ['role' => 'user', 'content' => $prompt]
         ]
-    ]);
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+    if ($payload === false) {
+        sendSSE(['error' => 'Failed to encode request (json_encode error: ' . json_last_error_msg() . ')']);
+        return;
+    }
 
     $headers = [
         'Content-Type: application/json',
@@ -472,7 +513,12 @@ function streamGemini(string $prompt, string $apiKey): void {
         'contents' => [
             ['parts' => [['text' => $prompt]]]
         ]
-    ]);
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+    if ($payload === false) {
+        sendSSE(['error' => 'Failed to encode request (json_encode error: ' . json_last_error_msg() . ')']);
+        return;
+    }
 
     $headers = ['Content-Type: application/json'];
 
