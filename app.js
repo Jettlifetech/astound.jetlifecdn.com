@@ -873,7 +873,7 @@ async function renderTemplates() {
     ),
     tplTextarea,
     // Syntax guide
-    h('div', { class: 'content-box-hover floating d-flex flex-column justify-content-center', style: 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 1.25rem; box-shadow: 0 15px 35px rgba(0,0,0,0.2), 0 5px 15px rgba(0,0,0,0.1); transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px); padding: 2.5rem; max-width: 600px; width: 100%; color: white; ' },
+    h('div', { class: 'content-box-hover d-flex flex-column justify-content-center m-4', style: 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 1.25rem; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px); padding: 2.5rem; max-width: 90%; width: 100%; color: white; margin-top: 5%; ' },
       h('h4', { class: 'fw-bold mb-4 border-bottom pb-3 border-opacity-25 border-light' },
         h('i', { class: 'fas fa-terminal me-2' }),
         ' Syntax Guide'
