@@ -815,7 +815,7 @@ async function renderTemplates() {
   const wrapCmdBtn = h('button', {
     type: 'button',
     class: 'btn btn-sm cosmic-btn',
-    style: 'background:rgba(6,182,212,0.15);border:1px solid rgba(6,182,212,0.4);color:#38bdf8;',
+    style: 'background:rgba(6,182,212,0.5); border:1px solid rgba(255,255,255,0.9); color:#fff !important; margin-left:5px;',
     title: 'Select text in the prompt, then click to wrap it as a click-to-copy terminal command block'
   },
     h('i', { class: 'bi bi-terminal me-1' }), 'Wrap as Terminal Command'
@@ -847,14 +847,29 @@ async function renderTemplates() {
     h('label', { for: 'tplText', class: 'form-label fw-bold' }, 'Prompt Text'),
     // Toolbar above textarea
     h('div', {
-      class: 'd-flex align-items-center gap-2 mb-1 p-2 rounded',
-      style: 'background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.07);'
+      class: 'd-flex align-items-center gap-2 mb-0 p-2',
+      style: 'background:#000 !important; color:#fff !important; border:1px solid rgba(255,255,255,0.15); border-top-left-radius: 15px; border-top-right-radius: 15px;'
     },
-      h('span', { class: 'small text-muted me-1' }, h('i', { class: 'bi bi-tools me-1' }), 'Toolbar:'),
+      // "Toolbar:" Label
+      h('span', { class: 'small me-1 fw-bold', style: 'color:#fff !important;' },
+        h('i', { class: 'bi bi-tools me-1' }),
+        'Toolbar:'
+      ),
+      // Wrap as Terminal Command Button (reuse the already-wired element)
       wrapCmdBtn,
-      h('span', { class: 'small text-muted ms-2' },
+      // Help Text and Variable Button
+      h('span', { class: 'small ms-2', style: 'color:#fff !important;' },
         'Select text → click to wrap in ',
-        h('code', { style: 'background:rgba(6,182,212,0.15);color:#38bdf8;padding:1px 5px;border-radius:3px; padding-bottom: 5%;' }, '{{…}}'))
+        h('button', {
+          id: 'toolbarWrapVarBtn',
+          type: 'button',
+          class: 'btn btn-sm cosmic-btn',
+          style: 'background:rgba(6,182,212,0.5); border:1px solid rgba(255,255,255,0.9); color:#fff !important; margin-left:5px;',
+          title: 'Select text in the prompt, then click to wrap it as a variable input for the prompt'
+        },
+          '{{…}}'
+        )
+      )
     ),
     tplTextarea,
     // Syntax guide
@@ -896,6 +911,28 @@ async function renderTemplates() {
       )
     )
   );
+
+  // Wire up the {{…}} variable-wrap button in the toolbar
+  textGroup.querySelector('#toolbarWrapVarBtn').addEventListener('click', () => {
+    const ta = tplTextarea;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const sel = ta.value.substring(start, end).trim();
+    if (!sel) {
+      toast('Select text in the prompt first, then click "{{…}}" to wrap it as a variable', 'warning');
+      return;
+    }
+    if (sel.startsWith('[') && sel.endsWith(']')) {
+      const inner = sel.slice(1, -1);
+      ta.setRangeText(inner, start, end, 'select');
+      toast('Removed variable wrapper', 'info');
+    } else {
+      ta.setRangeText('[' + sel + ']', start, end, 'select');
+      toast('Text wrapped as variable — will be replaced when prompt is generated!', 'success');
+    }
+    ta.focus();
+    ta.dispatchEvent(new Event('input'));
+  });
 
   // Privacy toggle row
   const privacyRow = h('div', { class: 'mb-3' },
@@ -2124,6 +2161,14 @@ async function renderSchemaGen() {
       },
         h('i', { class: 'bi bi-list-ul me-1' }), 'List of URLs'
       )
+    ),
+    h('li', { class: 'nav-item', role: 'presentation' },
+      h('button', {
+        class: 'nav-link', id: 'sg-faq-tab', type: 'button', role: 'tab',
+        'data-bs-toggle': 'tab', 'data-bs-target': '#sg-faq-panel'
+      },
+        h('i', { class: 'bi bi-question-circle me-1' }), 'Add FAQ Schema To Content Brief'
+      )
     )
   );
   mainBody.appendChild(tabNav);
@@ -2208,10 +2253,10 @@ async function renderSchemaGen() {
   function logMsg(text, type) {
     logBox.style.display = '';
     const line = document.createElement('div');
-    if (type === 'error')   line.style.color = '#ff6b6b';
+    if (type === 'error') line.style.color = '#ff6b6b';
     if (type === 'success') line.style.color = '#51cf66';
-    if (type === 'warn')    line.style.color = '#fcc419';
-    if (type === 'info')    line.style.color = '#74c0fc';
+    if (type === 'warn') line.style.color = '#fcc419';
+    if (type === 'info') line.style.color = '#74c0fc';
     const ts = new Date().toLocaleTimeString();
     line.textContent = '[' + ts + '] ' + text;
     logBox.appendChild(line);
@@ -2249,9 +2294,131 @@ async function renderSchemaGen() {
     reader.readAsText(file);
   });
 
+  // ── Tab: Add FAQ Schema To Content Brief ────────────────────────────────
+  const faqPanel = h('div', { class: 'tab-pane fade', id: 'sg-faq-panel', role: 'tabpanel' });
+
+  faqPanel.appendChild(h('div', { class: 'alert alert-info d-flex align-items-start gap-2 mb-3 py-2 mt-1' },
+    h('i', { class: 'bi bi-info-circle mt-1 flex-shrink-0' }),
+    h('div', { class: 'small' },
+      'Upload a ', h('strong', {}, '.docx'), ' content brief that contains a FAQ section. ',
+      'The tool will automatically detect the FAQ questions and answers, generate valid ',
+      h('strong', {}, 'FAQPage JSON-LD schema'), ', and produce a new Word document with the ',
+      'schema code pasted at the end of the FAQ section. ',
+      h('br', {}),
+      h('span', { class: 'text-muted' }, 'Tip: Your FAQ section heading should contain the words "FAQ" or "Frequently Asked Questions".')
+    )
+  ));
+
+  // File upload field
+  const faqFileLabel = h('label', { for: 'faqDocxUpload', class: 'form-label fw-semibold small' },
+    h('i', { class: 'bi bi-file-earmark-word me-1' }), 'Upload Content Brief (.docx)'
+  );
+  const faqFileInput = h('input', {
+    type: 'file',
+    class: 'form-control cosmic-input mb-3',
+    id: 'faqDocxUpload',
+    accept: '.docx'
+  });
+  faqPanel.append(faqFileLabel, faqFileInput);
+
+  // Submit button
+  const faqSubmitBtn = h('button', {
+    type: 'button',
+    class: 'btn btn-success cosmic-btn',
+    id: 'faqSubmitBtn'
+  },
+    h('i', { class: 'bi bi-magic me-2' }), 'Generate & Add FAQ Schema'
+  );
+  faqPanel.appendChild(faqSubmitBtn);
+
+  // Progress / status area
+  const faqStatus = h('div', { id: 'faqStatus', class: 'mt-3', style: 'display:none;' });
+  faqPanel.appendChild(faqStatus);
+
+  // Result area
+  const faqResult = h('div', { id: 'faqResult', class: 'mt-3', style: 'display:none;' });
+  faqPanel.appendChild(faqResult);
+
+  // Wire up FAQ submit
+  faqSubmitBtn.addEventListener('click', async () => {
+    const file = faqFileInput.files[0];
+    if (!file) {
+      toast('Please select a .docx file first.', 'warning');
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith('.docx')) {
+      toast('Only .docx files are supported.', 'warning');
+      return;
+    }
+
+    const provider = providerSel.value;
+    const apiKey = localStorage.getItem('prompt-db-' + provider + '-key') || '';
+    if (!apiKey) {
+      toast('No API key set for ' + provider + '. Go to Settings → API Keys.', 'warning');
+      return;
+    }
+
+    // UI: loading state
+    faqSubmitBtn.disabled = true;
+    faqSubmitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing…';
+    faqStatus.style.display = '';
+    faqStatus.className = 'mt-3 alert alert-info d-flex align-items-center gap-2';
+    faqStatus.innerHTML = '<span class="spinner-border spinner-border-sm"></span> '
+      + '<span>Uploading document and generating FAQ schema via AI…<br>'
+      + '<small class="text-muted">This may take 15–40 seconds depending on document length.</small></span>';
+    faqResult.style.display = 'none';
+    faqResult.innerHTML = '';
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('provider', provider);
+      formData.append('api_key', apiKey);
+
+      const res = await fetch(API_BASE + 'faq-schema.php', {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: formData
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'HTTP ' + res.status);
+      }
+
+      // Success UI
+      faqStatus.className = 'mt-3 alert alert-success';
+      faqStatus.innerHTML = '<i class="bi bi-check-circle me-2"></i>'
+        + '<strong>' + data.faq_count + ' FAQ pair' + (data.faq_count !== 1 ? 's' : '') + ' detected</strong> — '
+        + 'Schema generated and injected into your document!';
+
+      // Schema preview
+      const previewHtml = data.schema_preview
+        ? '<div class="mb-2"><label class="form-label fw-semibold small"><i class="bi bi-code-slash me-1"></i>Schema Preview</label>'
+        + '<pre style="background:#111;color:#51cf66;padding:12px;border-radius:8px;font-size:0.75rem;max-height:200px;overflow-y:auto;white-space:pre-wrap;">'
+        + data.schema_preview.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        + (data.schema_preview.length >= 600 ? '\n…' : '') + '</pre></div>'
+        : '';
+
+      faqResult.style.display = '';
+      faqResult.innerHTML = previewHtml
+        + '<a href="' + data.download_url + '" class="btn btn-primary cosmic-btn" download="' + data.filename + '">'
+        + '<i class="bi bi-download me-2"></i>Download: ' + data.filename + '</a>';
+
+      toast('FAQ Schema added! Your document is ready to download.', 'success');
+    } catch (err) {
+      faqStatus.className = 'mt-3 alert alert-danger';
+      faqStatus.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i><strong>Error:</strong> ' + err.message;
+      toast('Failed: ' + err.message, 'danger');
+    } finally {
+      faqSubmitBtn.disabled = false;
+      faqSubmitBtn.innerHTML = '<i class="bi bi-magic me-2"></i>Generate & Add FAQ Schema';
+    }
+  });
+
   // Tab content wrapper
   const tabContent = h('div', { class: 'tab-content' });
-  tabContent.append(importPanel, pastePanel, urlsPanel);
+  tabContent.append(importPanel, pastePanel, urlsPanel, faqPanel);
   mainBody.appendChild(tabContent);
 
   mainBody.appendChild(h('hr', { class: 'my-4' }));
@@ -2347,6 +2514,7 @@ async function renderSchemaGen() {
   function getActiveTab() {
     if (document.getElementById('sg-paste-tab')?.classList.contains('active')) return 'paste';
     if (document.getElementById('sg-urls-tab')?.classList.contains('active')) return 'urls';
+    if (document.getElementById('sg-faq-tab')?.classList.contains('active')) return 'faq';
     return 'import';
   }
 
@@ -2358,19 +2526,25 @@ async function renderSchemaGen() {
       keyBadge.className = 'badge bg-success fs-6';
       genSchemaBtn.disabled = false;
       identifyBtn.disabled = false;
+      faqSubmitBtn.disabled = false;
     } else {
       keyBadge.innerHTML = '\u26A0 No API key \u2014 <a href="#/settings" class="text-white text-decoration-underline">add in Settings \u2192 API Keys</a>';
       keyBadge.className = 'badge bg-warning text-dark fs-6';
       genSchemaBtn.disabled = true;
       identifyBtn.disabled = true;
+      faqSubmitBtn.disabled = true;
     }
   }
   updateKeyBadge();
   providerSel.addEventListener('change', updateKeyBadge);
 
-  // ── Show / hide Identify button based on active tab ────────────────────
+  // ── Show / hide Identify + Generate buttons based on active tab ────────────
   function updateIdentifyBtnVisibility() {
-    identifyBtn.style.display = getActiveTab() === 'urls' ? '' : 'none';
+    const tab = getActiveTab();
+    identifyBtn.style.display = tab === 'urls' ? '' : 'none';
+    // Hide the main Generate + output section controls on the faq tab
+    // (the FAQ tab has its own submit/result UI)
+    genSchemaBtn.style.display = tab === 'faq' ? 'none' : '';
   }
   updateIdentifyBtnVisibility();
   tabNav.querySelectorAll('button[data-bs-toggle="tab"]').forEach(tab => {
