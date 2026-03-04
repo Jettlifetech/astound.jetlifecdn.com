@@ -146,6 +146,7 @@ const api = {
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(data)
     });
+    if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
     if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`);
     try { return await res.json(); } catch { return { success: true }; }
   },
@@ -156,6 +157,7 @@ const api = {
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(data)
     });
+    if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
     if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status}`);
     return res.json();
   },
@@ -166,6 +168,7 @@ const api = {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
       body: formEncodedBody
     });
+    if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
     if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`);
     return res.json();
   },
@@ -175,28 +178,34 @@ const api = {
     try {
       const res = await fetch(API_BASE + 'templates.php', {
         method: 'PUT',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify(payload)
       });
+      if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
       if (res.ok) return await res.json();
-    } catch (e) { }
+    } catch (e) { if (e.message.includes('Session expired')) throw e; }
 
     // Fallback: PUT to /templates.php?id=ID
     try {
       const res = await fetch(API_BASE + `templates.php?id=${encodeURIComponent(payload.id)}`, {
         method: 'PUT',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify(payload)
       });
+      if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
       if (res.ok) return await res.json();
-    } catch (e) { }
+    } catch (e) { if (e.message.includes('Session expired')) throw e; }
 
     // Legacy fallback: POST with override
     const res = await fetch(API_BASE + 'templates.php', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-HTTP-Method-Override': 'PUT' },
       body: JSON.stringify({ ...payload, action: 'update', _method: 'PUT' })
     });
+    if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
     if (!res.ok) throw new Error(`Update failed: ${res.status}`);
     return res.json();
   },
@@ -430,6 +439,8 @@ async function renderGenerate() {
       h('option', { value: '' }, 'Select a template…'),
       state.templates
         .filter(t => t.template_name?.toLowerCase().includes(Store.state.searchQuery))
+        .filter(t => !parseInt(t.is_hidden) && !parseInt(t.is_archived))
+        .slice().sort((a, b) => (Number(b.use_count) || 0) - (Number(a.use_count) || 0))
         .map(t => h('option', { value: t.id }, t.template_name))
     )
   );
@@ -511,9 +522,11 @@ async function renderGenerate() {
     }
     input.id = `var_${variable.variable_name}`;
     input.placeholder = `Enter ${variable.field_label.toLowerCase()}…`;
-    // Pre-fill from active profile if available
+    // Pre-fill from active profile if available, then default_value fallback
     if (activeProfileData[variable.variable_name]) {
       input.value = activeProfileData[variable.variable_name];
+    } else if (variable.default_value) {
+      input.value = variable.default_value;
     }
     input.required = true;
     group.append(label, input);
@@ -716,6 +729,7 @@ async function renderTemplates() {
   let filterText = '';
   let filterCategory = 'all';
   let selectedIds = new Set();
+  let showArchived = false;
 
   // ── Category color palette ────────────────────────────────────────────────
   const CATEGORY_COLORS = {
@@ -956,9 +970,12 @@ async function renderTemplates() {
     });
   })();
 
-  const parseBtn = h('button', { type: 'button', class: 'btn btn-info cosmic-btn', id: 'parseBtn', 'data-ripple': '' },
-    h('i', { class: 'bi bi-search me-1' }), 'Parse variables'
+  const parseBtn = h('button', { type: 'button', class: 'btn btn-sm cosmic-btn parse-vars-btn ms-auto', id: 'parseBtn', 'data-ripple': '' },
+    h('i', { class: 'bi bi-search me-1' }), 'Parse Variables'
   );
+  // Insert parseBtn into the toolbar (far right)
+  const toolbar = textGroup.querySelector('.d-flex.align-items-center');
+  if (toolbar) toolbar.appendChild(parseBtn);
 
   const configSection = h('div', { id: 'varConfig', style: 'display:none;' },
     h('hr'),
@@ -975,10 +992,10 @@ async function renderTemplates() {
     )
   );
 
-  form.append(nameRow, groupRow, textGroup, privacyRow, parseBtn, configSection);
+  form.append(nameRow, groupRow, privacyRow, textGroup, configSection);
   body.append(form);
   card.append(body);
-  root.appendChild(card);
+  // card appended to tab pane below
 
   // ── Existing Templates Card ──────────────────────────────────────────────
   const listCard = h('div', { class: 'card card-surface' });
@@ -1017,6 +1034,13 @@ async function renderTemplates() {
     placeholder: '\uD83D\uDD0D Filter by name, variable, category…', style: 'max-width:340px;'
   });
   filterRow.appendChild(filterInput);
+
+  // Show Archived toggle
+  const archivedToggle = h('div', { class: 'form-check form-switch ms-2 d-flex align-items-center gap-1' },
+    h('input', { class: 'form-check-input', type: 'checkbox', id: 'showArchivedToggle', role: 'switch' }),
+    h('label', { class: 'form-check-label small text-muted', for: 'showArchivedToggle' }, 'Archived')
+  );
+  filterRow.appendChild(archivedToggle);
 
   // Category pill buttons
   const catPills = h('div', { class: 'd-flex gap-1 flex-wrap' });
@@ -1080,12 +1104,33 @@ async function renderTemplates() {
 
   listBody.append(listHeaderRow, filterRow, tableWrap);
   listCard.appendChild(listBody);
-  root.appendChild(listCard);
+
+  // ── Tab structure wrapping Creator + Existing Templates ────────────────
+  const tabNav = h('ul', { class: 'nav nav-tabs mb-3', role: 'tablist' },
+    h('li', { class: 'nav-item', role: 'presentation' },
+      h('button', { class: 'nav-link active', id: 'createTab-tab', 'data-bs-toggle': 'tab', 'data-bs-target': '#createTabPane', type: 'button', role: 'tab', 'aria-controls': 'createTabPane', 'aria-selected': 'true' },
+        h('i', { class: 'bi bi-plus-circle me-1' }), 'Create New Template'
+      )
+    ),
+    h('li', { class: 'nav-item', role: 'presentation' },
+      h('button', { class: 'nav-link', id: 'existingTab-tab', 'data-bs-toggle': 'tab', 'data-bs-target': '#existingTabPane', type: 'button', role: 'tab', 'aria-controls': 'existingTabPane', 'aria-selected': 'false' },
+        h('i', { class: 'bi bi-table me-1' }), 'Existing Templates'
+      )
+    )
+  );
+  const createPane = h('div', { class: 'tab-pane fade show active', id: 'createTabPane', role: 'tabpanel', 'aria-labelledby': 'createTab-tab' });
+  const existingPane = h('div', { class: 'tab-pane fade', id: 'existingTabPane', role: 'tabpanel', 'aria-labelledby': 'existingTab-tab' });
+  createPane.appendChild(card);
+  existingPane.appendChild(listCard);
+  const tabContent = h('div', { class: 'tab-content' }, createPane, existingPane);
+  root.append(tabNav, tabContent);
 
   // ── Render Template List ─────────────────────────────────────────────────
   function renderTemplateList() {
     const q = filterText.toLowerCase();
     let items = Store.state.templates.filter(t => {
+      // Archived filter
+      if (!showArchived && parseInt(t.is_archived)) return false;
       if (filterCategory === 'Ungrouped') return !t.category;
       if (filterCategory !== 'all') return t.category === filterCategory;
       return true;
@@ -1142,12 +1187,21 @@ async function renderTemplates() {
       });
       tr.appendChild(h('td', {}, cb));
 
-      // Name + group dot
+      // Name + group dot + version/hidden/archived badges
       const nameCell = h('td', {});
       if (t.group_name && t.group_color) {
         nameCell.appendChild(h('span', { class: 'me-1', style: `color:${t.group_color};font-size:0.9em;` }, '●'));
       }
       nameCell.appendChild(document.createTextNode(t.template_name));
+      if (parseInt(t.version) > 1) {
+        nameCell.appendChild(h('span', { class: 'badge bg-info text-dark ms-1', style: 'font-size:.65rem' }, 'v' + t.version));
+      }
+      if (parseInt(t.is_hidden)) {
+        nameCell.appendChild(h('span', { class: 'badge bg-warning text-dark ms-1', style: 'font-size:.65rem' }, 'Hidden'));
+      }
+      if (parseInt(t.is_archived)) {
+        nameCell.appendChild(h('span', { class: 'badge bg-secondary ms-1', style: 'font-size:.65rem' }, 'Archived'));
+      }
       tr.appendChild(nameCell);
 
       // ── Category cell — click to change / clear ─────────────────────────
@@ -1334,22 +1388,60 @@ async function renderTemplates() {
 
       // Actions — restrict edit/delete to owner only
       const actCell = h('td', {});
-      const actDiv = h('div', { class: 'd-flex gap-1' });
-      if (isOwner) {
+      const actDiv = h('div', { class: 'd-flex gap-1 flex-wrap' });
+      if (isOwner && !parseInt(t.is_archived)) {
         actDiv.appendChild(h('button', {
           class: 'btn btn-sm btn-outline-light cosmic-btn', title: 'Edit', 'data-ripple': '',
           onclick: () => openEditTemplateModal(t.id)
         }, h('i', { class: 'bi bi-pencil' })));
       }
-      actDiv.appendChild(h('a', {
-        href: '#/generate', class: 'btn btn-sm btn-outline-info cosmic-btn', title: 'Use in Generate',
-        onclick: () => {
-          setTimeout(() => {
-            const sel = $('#genTemplate');
-            if (sel) { sel.value = t.id; sel.dispatchEvent(new Event('change')); }
-          }, 0);
-        }
-      }, h('i', { class: 'bi bi-play' })));
+      if (!parseInt(t.is_archived)) {
+        actDiv.appendChild(h('a', {
+          href: '#/generate', class: 'btn btn-sm btn-outline-info cosmic-btn', title: 'Use in Generate',
+          onclick: () => {
+            setTimeout(() => {
+              const sel = $('#genTemplate');
+              if (sel) { sel.value = t.id; sel.dispatchEvent(new Event('change')); }
+            }, 0);
+          }
+        }, h('i', { class: 'bi bi-play' })));
+      }
+      if (isOwner && !parseInt(t.is_archived)) {
+        // Hide / Unhide toggle
+        const isHidden = parseInt(t.is_hidden);
+        actDiv.appendChild(h('button', {
+          class: 'btn btn-sm ' + (isHidden ? 'btn-warning' : 'btn-outline-warning') + ' cosmic-btn',
+          title: isHidden ? 'Unhide from dropdown' : 'Hide from dropdown', 'data-ripple': '',
+          onclick: async () => {
+            try {
+              await api.templateAction({ action: 'toggle_hidden', id: t.id, is_hidden: isHidden ? 0 : 1 });
+              t.is_hidden = isHidden ? 0 : 1;
+              const tpl = Store.state.templates.find(x => x.id === t.id);
+              if (tpl) tpl.is_hidden = t.is_hidden;
+              toast(t.is_hidden ? 'Hidden from Generate dropdown' : 'Visible in Generate dropdown', 'success');
+              renderTemplateList();
+            } catch (e) { toast('Error: ' + e.message, 'danger'); }
+          }
+        }, h('i', { class: isHidden ? 'bi bi-eye' : 'bi bi-eye-slash' })));
+        // Duplicate as new version
+        actDiv.appendChild(h('button', {
+          class: 'btn btn-sm btn-outline-secondary cosmic-btn', title: 'Duplicate as new version (archives current)', 'data-ripple': '',
+          onclick: async () => {
+            const ok = await confirmDialog({
+              title: 'Create New Version?',
+              body: `This will archive v${t.version || 1} of "${t.template_name}" and create v${(parseInt(t.version) || 1) + 1} as a new editable copy.`,
+              okText: 'Create New Version', okClass: 'btn-primary'
+            });
+            if (!ok) return;
+            try {
+              const res = await api.templateAction({ action: 'duplicate_version', id: t.id });
+              toast(`Created v${res.new_version} of "${t.template_name}"`, 'success');
+              await loadTemplates(true);
+              renderTemplateList();
+            } catch (e) { toast('Error: ' + e.message, 'danger'); }
+          }
+        }, h('i', { class: 'bi bi-copy' })));
+      }
       if (isOwner) {
         actDiv.appendChild(h('button', {
           class: 'btn btn-sm btn-outline-danger cosmic-btn', title: 'Delete', 'data-ripple': '',
@@ -1410,6 +1502,12 @@ async function renderTemplates() {
 
   // Filter input
   filterInput.addEventListener('input', () => { filterText = filterInput.value.trim(); renderTemplateList(); });
+
+  // Show Archived toggle
+  document.getElementById('showArchivedToggle')?.addEventListener('change', function () {
+    showArchived = this.checked;
+    renderTemplateList();
+  });
 
   // Category pills — colored active/inactive states
   document.querySelectorAll('.cat-pill').forEach(btn => {
@@ -1672,8 +1770,9 @@ async function renderTemplates() {
       const variables = extractedVariables.map((varName, i) => {
         const label = $(`#label_${i}`).value.trim();
         const type = $(`#type_${i}`).value;
+        const defaultVal = $(`#default_${i}`)?.value.trim() || null;
         if (!label) throw new Error(`Please provide a label for "${varName}"`);
-        return { variable_name: varName, field_label: label, field_type: type };
+        return { variable_name: varName, field_label: label, field_type: type, default_value: defaultVal };
       });
       const result = await api.post('templates.php', { template_name: name, prompt_text: text, category, group_name: groupName, group_color: groupColor, is_public: isPublic, variables });
       if (result && result.success === false) throw new Error(result.error || 'Failed to save template');
@@ -1692,21 +1791,25 @@ async function renderTemplates() {
     const pretty = formatLabel(varName);
     const row = h('div', { class: 'variable-row mb-2' },
       h('div', { class: 'row g-3 align-items-center' },
-        h('div', { class: 'col-md-4' },
+        h('div', { class: 'col-md-3' },
           h('label', { class: 'form-label fw-bold' }, 'Variable Name'),
           h('input', { class: 'form-control cosmic-input', value: varName, readonly: true })
         ),
-        h('div', { class: 'col-md-4' },
+        h('div', { class: 'col-md-3' },
           h('label', { class: 'form-label fw-bold' }, 'Field Label'),
           h('input', { class: 'form-control cosmic-input', id: `label_${index}`, value: pretty, required: true, placeholder: 'e.g., Email Tone' })
         ),
-        h('div', { class: 'col-md-4' },
+        h('div', { class: 'col-md-3' },
           h('label', { class: 'form-label fw-bold' }, 'Input Type'),
           (() => {
             const select = h('select', { class: 'form-select cosmic-input', id: `type_${index}` });
             ['text', 'textarea', 'number', 'date', 'email', 'url'].forEach(t => select.append(h('option', { value: t }, t)));
             return select;
           })()
+        ),
+        h('div', { class: 'col-md-3' },
+          h('label', { class: 'form-label fw-bold' }, 'Default Value'),
+          h('input', { class: 'form-control cosmic-input', id: `default_${index}`, placeholder: '(optional)' })
         )
       )
     );
@@ -3511,6 +3614,7 @@ async function openEditTemplateModal(templateId) {
           variable_name: $('.evar-name', row).value.trim(),
           field_label: $('.evar-label', row).value.trim(),
           field_type: $('.evar-type', row).value,
+          default_value: ($('.evar-default', row)?.value || '').trim() || null,
           variable_order: order + 1
         }));
         // Basic validation
@@ -3626,11 +3730,11 @@ function editVariableRow(v, index) {
 
   // Field inputs
   row.appendChild(h('div', { class: 'row g-2' },
-    h('div', { class: 'col-md-4' },
+    h('div', { class: 'col-md-3' },
       h('label', { class: 'form-label small fw-bold mb-1' }, 'Variable Name'),
       h('input', { class: 'form-control form-control-sm cosmic-input evar-name', value: v.variable_name || '', placeholder: 'e.g., recipient' })
     ),
-    h('div', { class: 'col-md-5' },
+    h('div', { class: 'col-md-3' },
       h('label', { class: 'form-label small fw-bold mb-1' }, 'Field Label'),
       h('input', { class: 'form-control form-control-sm cosmic-input evar-label', value: v.field_label || '', placeholder: 'Readable label' })
     ),
@@ -3643,6 +3747,10 @@ function editVariableRow(v, index) {
         );
         return select;
       })()
+    ),
+    h('div', { class: 'col-md-3' },
+      h('label', { class: 'form-label small fw-bold mb-1' }, 'Default Value'),
+      h('input', { class: 'form-control form-control-sm cosmic-input evar-default', value: v.default_value || '', placeholder: '(optional)' })
     )
   ));
 

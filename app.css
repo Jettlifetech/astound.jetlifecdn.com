@@ -540,6 +540,22 @@ body {
   padding-bottom: .35rem;
 }
 
+/* Parse Variables toolbar button — teal-to-green gradient on hover */
+.parse-vars-btn {
+  background: rgba(6, 182, 212, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  color: #fff !important;
+  font-weight: 600;
+  transition: background .25s ease, border-color .25s ease, box-shadow .25s ease;
+}
+
+.parse-vars-btn:hover {
+  background: linear-gradient(135deg, #06b6d4, #22c55e);
+  border-color: rgba(255, 255, 255, 0.9);
+  color: #fff !important;
+  box-shadow: 0 4px 16px rgba(6, 182, 212, 0.35);
+}
+
 .app-sidebar .nav-link:hover {
   background: rgba(0, 0, 0, .05);
   color: var(--text);

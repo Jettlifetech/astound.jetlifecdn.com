@@ -33,6 +33,8 @@ if ($method === 'POST') {
                 case 'export':
                 case 'import':
                 case 'toggle_public':
+                case 'toggle_hidden':
+                case 'duplicate_version':
                     $method = 'ACTION';
                     break;
             }
@@ -52,7 +54,7 @@ try {
                 $stmt = $conn->prepare("
                     SELECT t.*, u.username as owner_username,
                            GROUP_CONCAT(
-                               CONCAT_WS('|', v.variable_name, v.field_label, v.field_type, v.variable_order)
+                               CONCAT_WS('|', v.variable_name, v.field_label, v.field_type, v.variable_order, IFNULL(v.default_value, ''))
                                ORDER BY v.variable_order
                                SEPARATOR ';;'
                            ) as variables
@@ -67,9 +69,10 @@ try {
                 if ($template) {
                     $template['variables'] = $template['variables']
                         ? array_map(function($v) {
-                            list($name, $label, $type, $order) = explode('|', $v);
-                            return ['variable_name' => $name, 'field_label' => $label,
-                                    'field_type' => $type, 'variable_order' => (int)$order];
+                            $p = explode('|', $v);
+                            return ['variable_name' => $p[0] ?? '', 'field_label' => $p[1] ?? '',
+                                    'field_type' => $p[2] ?? 'text', 'variable_order' => (int)($p[3] ?? 0),
+                                    'default_value' => ($p[4] ?? '') !== '' ? $p[4] : null];
                           }, explode(';;', $template['variables']))
                         : [];
                     $template['is_owner'] = ((int)$template['user_id'] === (int)$authUser['id']);
@@ -80,6 +83,7 @@ try {
                 $stmt = $conn->prepare("
                     SELECT t.id, t.template_name, t.created_at, t.updated_at, t.use_count,
                            t.category, t.group_name, t.group_color, t.is_public, t.user_id,
+                           t.is_hidden, t.version, t.is_archived,
                            u.username as owner_username,
                            (t.user_id = ?) as is_owner
                     FROM prompt_templates t
@@ -94,6 +98,7 @@ try {
                 $stmt = $conn->prepare("
                     SELECT t.id, t.template_name, t.created_at, t.updated_at, t.use_count,
                            t.category, t.group_name, t.group_color, t.is_public, t.user_id,
+                           t.is_hidden, t.version, t.is_archived,
                            u.username as owner_username,
                            (t.user_id = ?) as is_owner
                     FROM prompt_templates t
@@ -163,7 +168,7 @@ try {
                 $stmt = $conn->prepare("
                     SELECT t.template_name, t.prompt_text, t.category, t.group_name, t.group_color, t.is_public, t.created_at,
                            GROUP_CONCAT(
-                               CONCAT_WS('|', v.variable_name, v.field_label, v.field_type, v.variable_order)
+                               CONCAT_WS('|', v.variable_name, v.field_label, v.field_type, v.variable_order, IFNULL(v.default_value, ''))
                                ORDER BY v.variable_order SEPARATOR ';;'
                            ) as variables
                     FROM prompt_templates t
@@ -177,14 +182,50 @@ try {
                 $export = array_map(function($t) {
                     $t['variables'] = $t['variables']
                         ? array_map(function($v) {
-                            list($name, $label, $type, $order) = explode('|', $v);
-                            return ['variable_name' => $name, 'field_label' => $label,
-                                    'field_type' => $type, 'variable_order' => (int)$order];
+                            $p = explode('|', $v);
+                            return ['variable_name' => $p[0] ?? '', 'field_label' => $p[1] ?? '',
+                                    'field_type' => $p[2] ?? 'text', 'variable_order' => (int)($p[3] ?? 0),
+                                    'default_value' => ($p[4] ?? '') !== '' ? $p[4] : null];
                           }, explode(';;', $t['variables']))
                         : [];
                     return $t;
                 }, $rows);
                 echo json_encode(['success' => true, 'templates' => $export, 'exported_at' => date('c')]);
+
+            } elseif ($action === 'toggle_hidden') {
+                $id = (int)($data['id'] ?? 0);
+                $isHidden = (int)(bool)($data['is_hidden'] ?? false);
+                if (!$id) throw new Exception('Template ID is required');
+                $stmt = $conn->prepare("UPDATE prompt_templates SET is_hidden = ? WHERE id = ? AND user_id = ?");
+                $stmt->execute([$isHidden, $id, $authUser['id']]);
+                if (!$stmt->rowCount()) throw new Exception('Template not found or access denied');
+                echo json_encode(['success' => true, 'is_hidden' => $isHidden]);
+
+            } elseif ($action === 'duplicate_version') {
+                $id = (int)($data['id'] ?? 0);
+                if (!$id) throw new Exception('Template ID is required');
+                $stmt = $conn->prepare("SELECT * FROM prompt_templates WHERE id = ? AND user_id = ?");
+                $stmt->execute([$id, $authUser['id']]);
+                $tpl = $stmt->fetch();
+                if (!$tpl) throw new Exception('Template not found or access denied');
+                $newVersion = (int)($tpl['version'] ?? 1) + 1;
+                $conn->beginTransaction();
+                // Archive old version
+                $conn->prepare("UPDATE prompt_templates SET is_archived = 1 WHERE id = ?")->execute([$id]);
+                // Create new version
+                $stmt = $conn->prepare("INSERT INTO prompt_templates (user_id, template_name, prompt_text, category, group_name, group_color, is_public, version, use_count) VALUES (?,?,?,?,?,?,?,?,0)");
+                $stmt->execute([$authUser['id'], $tpl['template_name'], $tpl['prompt_text'],
+                    $tpl['category'], $tpl['group_name'], $tpl['group_color'], $tpl['is_public'], $newVersion]);
+                $newId = $conn->lastInsertId();
+                // Copy variables including default_value
+                $vars = $conn->prepare("SELECT * FROM template_variables WHERE template_id = ? ORDER BY variable_order");
+                $vars->execute([$id]);
+                $insVar = $conn->prepare("INSERT INTO template_variables (template_id, variable_name, field_label, field_type, variable_order, default_value) VALUES (?,?,?,?,?,?)");
+                foreach ($vars as $v) {
+                    $insVar->execute([$newId, $v['variable_name'], $v['field_label'], $v['field_type'], $v['variable_order'], $v['default_value']]);
+                }
+                $conn->commit();
+                echo json_encode(['success' => true, 'new_id' => $newId, 'new_version' => $newVersion]);
 
             } elseif ($action === 'import') {
                 // Import templates from JSON
@@ -194,7 +235,7 @@ try {
                 $imported = 0; $skipped = 0;
                 $stmtCheck = $conn->prepare("SELECT id FROM prompt_templates WHERE template_name = ? AND user_id = ?");
                 $stmtIns   = $conn->prepare("INSERT INTO prompt_templates (user_id, template_name, prompt_text, category, group_name, group_color, is_public) VALUES (?,?,?,?,?,?,?)");
-                $stmtVar   = $conn->prepare("INSERT INTO template_variables (template_id, variable_name, field_label, field_type, variable_order) VALUES (?,?,?,?,?)");
+                $stmtVar   = $conn->prepare("INSERT INTO template_variables (template_id, variable_name, field_label, field_type, variable_order, default_value) VALUES (?,?,?,?,?,?)");
                 foreach ($templates as $t) {
                     $name = $t['template_name'] ?? '';
                     $text = $t['prompt_text'] ?? '';
@@ -207,7 +248,7 @@ try {
                     $newId = $conn->lastInsertId();
                     foreach ($t['variables'] ?? [] as $order => $v) {
                         $stmtVar->execute([$newId, $v['variable_name'], $v['field_label'],
-                            $v['field_type'], $v['variable_order'] ?? $order]);
+                            $v['field_type'], $v['variable_order'] ?? $order, $v['default_value'] ?? null]);
                     }
                     $imported++;
                 }
@@ -246,10 +287,10 @@ try {
             $stmt->execute([$templateId]);
 
             if (isset($data['variables']) && is_array($data['variables'])) {
-                $stmt = $conn->prepare("INSERT INTO template_variables (template_id, variable_name, field_label, field_type, variable_order) VALUES (?,?,?,?,?)");
+                $stmt = $conn->prepare("INSERT INTO template_variables (template_id, variable_name, field_label, field_type, variable_order, default_value) VALUES (?,?,?,?,?,?)");
                 foreach ($data['variables'] as $order => $var) {
                     $stmt->execute([$templateId, $var['variable_name'], $var['field_label'],
-                        $var['field_type'], $var['variable_order'] ?? $order]);
+                        $var['field_type'], $var['variable_order'] ?? $order, $var['default_value'] ?? null]);
                 }
             }
             $conn->commit();
@@ -264,17 +305,17 @@ try {
             $isPublic = isset($data['is_public']) ? (int)(bool)$data['is_public'] : 0;
 
             $conn->beginTransaction();
-            $stmt = $conn->prepare("INSERT INTO prompt_templates (user_id, template_name, prompt_text, category, group_name, group_color, is_public) VALUES (?,?,?,?,?,?,?)");
+            $stmt = $conn->prepare("INSERT INTO prompt_templates (user_id, template_name, prompt_text, category, group_name, group_color, is_public, version) VALUES (?,?,?,?,?,?,?,1)");
             $stmt->execute([$authUser['id'], $data['template_name'], $data['prompt_text'],
                 $data['category'] ?? null, $data['group_name'] ?? null, $data['group_color'] ?? null, $isPublic]);
             $templateId = $conn->lastInsertId();
 
             if (isset($data['variables']) && is_array($data['variables'])) {
-                $stmt = $conn->prepare("INSERT INTO template_variables (template_id, variable_name, field_label, field_type, variable_order) VALUES (?,?,?,?,?)");
+                $stmt = $conn->prepare("INSERT INTO template_variables (template_id, variable_name, field_label, field_type, variable_order, default_value) VALUES (?,?,?,?,?,?)");
                 $order = 0;
                 foreach ($data['variables'] as $var) {
                     $stmt->execute([$templateId, $var['variable_name'], $var['field_label'],
-                        $var['field_type'], $order++]);
+                        $var['field_type'], $order++, $var['default_value'] ?? null]);
                 }
             }
             $conn->commit();
