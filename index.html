@@ -208,8 +208,34 @@
     </div>
   </div>
 
+  <!-- Re-login modal (session expired, no page refresh needed) -->
+  <div class="modal fade" id="reloginModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="reloginModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content" style="background:#1a1d2e;border:1px solid rgba(255,255,255,.12);">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title text-warning" id="reloginModalLabel"><i class="bi bi-shield-lock me-2"></i>Session Expired</h5>
+        </div>
+        <div class="modal-body pt-2">
+          <p class="text-muted small mb-3">Your session timed out. Sign in again to continue — your work is still here.</p>
+          <form id="reloginForm">
+            <div class="mb-2">
+              <input type="text" class="form-control form-control-sm cosmic-input" id="reloginUser" required autocomplete="username" placeholder="Username">
+            </div>
+            <div class="mb-2">
+              <input type="password" class="form-control form-control-sm cosmic-input" id="reloginPass" required autocomplete="current-password" placeholder="Password">
+            </div>
+            <div id="reloginError" class="alert alert-danger d-none py-1 px-2 small mb-2"></div>
+            <button type="submit" class="btn btn-primary btn-sm w-100 cosmic-btn" id="reloginBtn">
+              <i class="bi bi-box-arrow-in-right me-1"></i> Sign In & Continue
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="./app.js?v=20260227b"></script>
+  <script src="./app.js?v=20260402"></script>
 </body>
 
 </html>

@@ -13,7 +13,8 @@ function startSecureSession() {
     if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
         ini_set('session.cookie_secure', 1);
     }
-    ini_set('session.gc_maxlifetime', 7200); // 2 hours
+    ini_set('session.gc_maxlifetime', 86400); // 24 hours
+    ini_set('session.cookie_lifetime', 86400); // cookie persists 24 hours
     session_start();
 }
 

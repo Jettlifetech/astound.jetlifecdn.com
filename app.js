@@ -128,47 +128,119 @@ function confirmDialog({ title = 'Confirm', body = 'Are you sure?', okText = 'OK
   });
 }
 
+// --- Session Re-login (inline, no page refresh) ---
+let _reloginPromise = null;
+function showReloginModal() {
+  // If already showing, return the existing promise
+  if (_reloginPromise) return _reloginPromise;
+  _reloginPromise = new Promise((resolve, reject) => {
+    const modalEl = document.getElementById('reloginModal');
+    if (!modalEl) { reject(new Error('Session expired — please refresh the page and sign in again.')); _reloginPromise = null; return; }
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    const form = document.getElementById('reloginForm');
+    const errEl = document.getElementById('reloginError');
+    const btn = document.getElementById('reloginBtn');
+    const userInput = document.getElementById('reloginUser');
+    const passInput = document.getElementById('reloginPass');
+    // Pre-fill username if we know it
+    if (window._currentUser?.username) userInput.value = window._currentUser.username;
+    passInput.value = '';
+    errEl.classList.add('d-none');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-box-arrow-in-right me-1"></i> Sign In & Continue';
+    const submitHandler = async (e) => {
+      e.preventDefault();
+      const username = userInput.value.trim();
+      const password = passInput.value;
+      if (!username || !password) { errEl.textContent = 'Please enter username and password.'; errEl.classList.remove('d-none'); return; }
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Signing in…';
+      errEl.classList.add('d-none');
+      try {
+        const res = await fetch(API_BASE + 'auth.php?action=login', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Login failed');
+        // Success — update global user, close modal, resolve
+        if (data.user) window._currentUser = data.user;
+        modal.hide();
+        form.removeEventListener('submit', submitHandler);
+        toast('Session restored — continuing your action…', 'success');
+        _reloginPromise = null;
+        resolve(true);
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.classList.remove('d-none');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-box-arrow-in-right me-1"></i> Sign In & Continue';
+      }
+    };
+    form.addEventListener('submit', submitHandler);
+    modal.show();
+    setTimeout(() => passInput.focus(), 300);
+  });
+  return _reloginPromise;
+}
+
+// Fetch wrapper: on 401, show re-login modal, then auto-retry the same request
+async function authFetch(url, opts = {}, _retried = false) {
+  opts.credentials = opts.credentials || 'same-origin';
+  const res = await fetch(url, opts);
+  if (res.status === 401 && !_retried) {
+    await showReloginModal();
+    return authFetch(url, opts, true); // retry once after re-login
+  }
+  return res;
+}
+
+// --- Session keep-alive ping (every 5 minutes while page is visible) ---
+(function initKeepAlive() {
+  const INTERVAL = 5 * 60 * 1000; // 5 minutes
+  let timer = null;
+  function ping() {
+    fetch(API_BASE + 'auth.php?action=check', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } }).catch(() => {});
+  }
+  function start() { if (!timer) timer = setInterval(ping, INTERVAL); }
+  function stop() { if (timer) { clearInterval(timer); timer = null; } }
+  document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+  start();
+})();
+
 // --- API helpers (AJAX) ---
 const api = {
   async get(path) {
-    const res = await fetch(API_BASE + path, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
-    if (res.status === 401) {
-      console.info('Session expired or not authenticated for:', path);
-      return null;
-    }
+    const res = await authFetch(API_BASE + path, { headers: { 'Accept': 'application/json' } });
+    if (res.status === 401) { console.info('Not authenticated for:', path); return null; }
     if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
     return res.json();
   },
   async post(path, data) {
-    const res = await fetch(API_BASE + path, {
+    const res = await authFetch(API_BASE + path, {
       method: 'POST',
-      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(data)
     });
-    if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
     if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`);
     try { return await res.json(); } catch { return { success: true }; }
   },
   async put(path, data) {
-    const res = await fetch(API_BASE + path, {
+    const res = await authFetch(API_BASE + path, {
       method: 'PUT',
-      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(data)
     });
-    if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
     if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status}`);
     return res.json();
   },
   async del(path, formEncodedBody) {
-    const res = await fetch(API_BASE + path, {
+    const res = await authFetch(API_BASE + path, {
       method: 'DELETE',
-      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
       body: formEncodedBody
     });
-    if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
     if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`);
     return res.json();
   },
@@ -176,48 +248,40 @@ const api = {
   async updateTemplate(payload) {
     // Preferred: PUT with JSON body
     try {
-      const res = await fetch(API_BASE + 'templates.php', {
+      const res = await authFetch(API_BASE + 'templates.php', {
         method: 'PUT',
-        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
       if (res.ok) return await res.json();
-    } catch (e) { if (e.message.includes('Session expired')) throw e; }
+    } catch (e) { /* try next fallback */ }
 
     // Fallback: PUT to /templates.php?id=ID
     try {
-      const res = await fetch(API_BASE + `templates.php?id=${encodeURIComponent(payload.id)}`, {
+      const res = await authFetch(API_BASE + `templates.php?id=${encodeURIComponent(payload.id)}`, {
         method: 'PUT',
-        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
       if (res.ok) return await res.json();
-    } catch (e) { if (e.message.includes('Session expired')) throw e; }
+    } catch (e) { /* try next fallback */ }
 
     // Legacy fallback: POST with override
-    const res = await fetch(API_BASE + 'templates.php', {
+    const res = await authFetch(API_BASE + 'templates.php', {
       method: 'POST',
-      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-HTTP-Method-Override': 'PUT' },
       body: JSON.stringify({ ...payload, action: 'update', _method: 'PUT' })
     });
-    if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
     if (!res.ok) throw new Error(`Update failed: ${res.status}`);
     return res.json();
   },
   // Generic template action (increment_use, bulk_category, export, import, etc.)
   async templateAction(actionData) {
-    const res = await fetch(API_BASE + 'templates.php', {
+    const res = await authFetch(API_BASE + 'templates.php', {
       method: 'POST',
-      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(actionData)
     });
-    if (res.status === 401) throw new Error('Session expired — please refresh the page and sign in again.');
     if (!res.ok) throw new Error(`Action failed: ${res.status}`);
     return res.json();
   }
